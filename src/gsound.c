@@ -172,7 +172,7 @@ int sound_init(unsigned b, unsigned mr, unsigned writer, unsigned hardsid, unsig
   if (catweasel)
   {
     #ifdef __WIN32__
-    catweaselhandle = CreateFile("\\\\.\\SID6581_1", GENERIC_READ, FILE_SHARE_WRITE|FILE_SHARE_READ, 0L,
+    catweaselhandle = CreateFileA("\\\\.\\SID6581_1", GENERIC_READ, FILE_SHARE_WRITE|FILE_SHARE_READ, 0L,
       OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0L);
     if (catweaselhandle == INVALID_HANDLE_VALUE)
       return 0;
@@ -509,7 +509,7 @@ void sound_mixer(Sint32 *dest, unsigned samples)
 #ifdef __WIN32__
 void InitHardDLL()
 {
-  if (!(hardsiddll=LoadLibrary("HARDSID.DLL"))) return;
+  if (!(hardsiddll=LoadLibraryA("HARDSID.DLL"))) return;
 
   WriteToHardSID = (lpWriteToHardSID) GetProcAddress(hardsiddll, "WriteToHardSID");
   ReadFromHardSID = (lpReadFromHardSID) GetProcAddress(hardsiddll, "ReadFromHardSID");

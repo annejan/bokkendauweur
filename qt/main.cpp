@@ -7,7 +7,7 @@
 #include <SDL/SDL.h>
 #include <cstring>
 #include "MainWindow.h"
-#include "Rpc.h"
+#include "RpcServer.h"
 #include "PaAudio.h"
 #include "Theme.h"
 #include "Log.h"
@@ -37,6 +37,13 @@ void sid_init(int speed, unsigned m, unsigned ntsc, unsigned interpolate,
               unsigned customclockrate, unsigned usefp);
 }
 #include "gplay.h" // PLAY_STOPPED
+
+// SDL 1.2 (and sdl12-compat) #define main SDL_main on macOS/Windows so its
+// SDLmain shim can wrap our entry point. This app owns its entry point via
+// Qt, so undo that and keep a real main().
+#ifdef main
+#undef main
+#endif
 
 int main(int argc, char **argv) {
     QApplication::setOrganizationName("goattrk2-qt");

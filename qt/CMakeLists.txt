@@ -18,6 +18,23 @@ pkg_check_modules(JACK REQUIRED jack)
 find_library(PORTAUDIO_LIB portaudio REQUIRED)
 find_path(PORTAUDIO_INCLUDE portaudio.h REQUIRED)
 
+# Some SDL 1.2 pkg-config files (notably macOS sdl12-compat) list -lSDLmain,
+# which hijacks main() and may not even exist as a separate library. This app
+# provides its own main() (via Qt), so drop SDLmain when present.
+if(SDL_LIBRARIES)
+    list(REMOVE_ITEM SDL_LIBRARIES SDLmain)
+endif()
+
+# SDL/JACK are linked by name (-lSDL, -ljack); make sure their pkg-config
+# library directories are on the linker search path (needed on macOS where
+# Homebrew lives outside the default search paths).
+link_directories(${SDL_LIBRARY_DIRS} ${JACK_LIBRARY_DIRS})
+
+# SDL 1.2 (and sdl12-compat) #define main SDL_main on macOS/Windows and expect
+# an SDLmain library to supply the real entry point. This app owns its entry
+# point via Qt, so tell SDL to keep its hands off main().
+add_compile_definitions(SDL_MAIN_HANDLED)
+
 set(SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../src)
 
 # Core data + edit logic (no rendering calls verified by grep)
@@ -75,7 +92,7 @@ set(QT_SRC
     InstrumentQuickList.cpp
     StatusStrip.cpp
     UndoStack.cpp
-    Rpc.cpp
+    RpcServer.cpp
     PaAudio.cpp
     CoreEvents.cpp
     InstrColors.cpp
@@ -126,6 +143,13 @@ target_link_libraries(goattrk2-qt PRIVATE
 
 # Stereo support is now a runtime flag (stereo_mode global) inside the single
 # goattrk2-qt binary above. The separate goattrk2-qt-stereo target is gone.
+
+# Qt may build Windows executables for the GUI subsystem (entry point WinMain).
+# This app keeps a plain main() (see main.cpp), so force the console subsystem
+# on Windows; the linker then uses main() as the entry point.
+if(WIN32)
+    target_link_options(goattrk2-qt PRIVATE -Wl,-subsystem,console)
+endif()
 
 # ---------------------------------------------------------------------------
 # gt2reloc — standalone commandline relocator/packer (backport from v2.73)

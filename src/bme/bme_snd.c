@@ -58,7 +58,14 @@ static Sint32 *snd_clipbuffer = NULL;
 static SDL_AudioSpec desired;
 static SDL_AudioSpec obtained;
 
+// JACK is used for optional MIDI input/transport (audio output is SDL).
+// There is normally no JACK server on Windows, and trying to connect there
+// just spews named-pipe errors at startup, so default it off on Windows.
+#ifdef _WIN32
+static int use_jack = 0;
+#else
 static int use_jack = 1;
+#endif
 static int use_jack_audio = 0;
 
 static jack_client_t* client;
@@ -119,7 +126,9 @@ int snd_init_jack() {
 
     client = jack_client_open("goattracker2", JackNoStartServer, &status);
     if (client == 0) {
-        fprintf(stderr, "failed to create jack client\n");
+        fprintf(stderr, "no jack server available; continuing without jack\n");
+        // Don't touch jack again this session; snd_init falls back to SDL audio.
+        use_jack = 0;
         return BME_ERROR;
     }
 

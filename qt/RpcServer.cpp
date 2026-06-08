@@ -1,4 +1,4 @@
-#include "Rpc.h"
+#include "RpcServer.h"
 #include "MainWindow.h"
 #include "PatternView.h"
 
@@ -91,8 +91,11 @@ static int parseHex(const QString &s, int def = 0) {
 Rpc::Rpc(MainWindow *mw, QObject *parent)
     : QObject(parent), mw_(mw) {
     // Make stdin non-blocking so partial reads return promptly.
+    // POSIX-only; on Windows the QSocketNotifier path below is not used.
+#ifndef _WIN32
     int flags = fcntl(0, F_GETFL, 0);
     fcntl(0, F_SETFL, flags | O_NONBLOCK);
+#endif
     notifier_ = new QSocketNotifier(0, QSocketNotifier::Read, this);
     connect(notifier_, &QSocketNotifier::activated,
             this, &Rpc::onStdinReadable);
