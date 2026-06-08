@@ -1,1 +1,0 @@
-/usr/bin/c++ CMakeFiles/sid2sng.dir/sid2sng_autogen/mocs_compilation.cpp.o CMakeFiles/sid2sng.dir/__/ext/sid2sng/main.cpp.o CMakeFiles/sid2sng.dir/__/ext/sid2sng/gsong.cpp.o -o sid2sng  -lstdc++fs 
