@@ -1146,17 +1146,17 @@ void MainWindow::refreshAll() {
         w->style()->polish(w);
     };
     bool playing = isplaying() != 0;
-    // Glow rule:
-    //   PLAY_BEGINNING running      -> Begin
-    //   PLAY_POS running            -> Pos (button label is 'Pause')
-    //   PLAY_PATTERN running        -> Begin + Patt (song on repeat)
-    //   not playing, pausedAtPos_   -> Pos (button label is 'Pos' again)
-    //   not playing, !pausedAtPos_  -> no glow
-    bool playBegin = playing && lastsonginit == PLAY_BEGINNING;
-    bool playPos   = playing && lastsonginit == PLAY_POS;
-    bool playPatt  = playing && lastsonginit == PLAY_PATTERN;
-    setActive(playBeginBtn_, playBegin || playPatt);
-    setActive(playPosBtn_,   playPos   || (!playing && pausedAtPos_));
+    // Glow rule (option B from the user):
+    //   Begin    pure trigger — never holds an active state. Click =
+    //            'start over from the top'.
+    //   Pos      owns 'is playing'. Glows whenever the engine is
+    //            running OR while paused (label flips between
+    //            ⏸ Pause / ▶ Pos via onTransportChanged).
+    //   Patt     glows on PLAY_PATTERN alongside Pos (pattern is
+    //            looping = is playing, just constrained).
+    bool playPatt = playing && lastsonginit == PLAY_PATTERN;
+    setActive(playBeginBtn_, false);
+    setActive(playPosBtn_,   playing || pausedAtPos_);
     setActive(playPattBtn_,  playPatt);
 }
 
