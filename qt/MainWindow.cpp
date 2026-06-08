@@ -644,7 +644,7 @@ void MainWindow::buildUi() {
         { btn->setObjectName("playPos");   btn->setText("▶ Pos"); playPosBtn_ = btn; }
     // onTransportChanged re-labels playPos between ▶ Pos / ⏸ Pause.
     if (auto *btn = qobject_cast<QToolButton*>(tb->widgetForAction(playPatA)))
-        { btn->setObjectName("playPatt");  btn->setText("⧈ Patt"); playPattBtn_ = btn; }
+        { btn->setObjectName("playPatt");  btn->setText("⟳ Patt"); playPattBtn_ = btn; }
 
     auto addSpacer = [&](int w = 28) {
         auto *spacer = new QWidget(tb);
