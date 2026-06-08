@@ -40,6 +40,7 @@
 #include <QWidget>
 #include <QVBoxLayout>
 #include <QToolButton>
+#include <QFontMetrics>
 #include <QFrame>
 #include <QMouseEvent>
 #include <QLabel>
@@ -640,8 +641,18 @@ void MainWindow::buildUi() {
     tb->addAction(playPatA);
     if (auto *btn = qobject_cast<QToolButton*>(tb->widgetForAction(playA)))
         { btn->setObjectName("playBegin"); btn->setText("⏮ Begin"); playBeginBtn_ = btn; }
-    if (auto *btn = qobject_cast<QToolButton*>(tb->widgetForAction(playPosA)))
-        { btn->setObjectName("playPos");   btn->setText("▶ Pos"); playPosBtn_ = btn; }
+    if (auto *btn = qobject_cast<QToolButton*>(tb->widgetForAction(playPosA))) {
+        btn->setObjectName("playPos");
+        btn->setText("▶ Pos");
+        playPosBtn_ = btn;
+        // Lock width to the wider of '▶ Pos' / '⏸ Pause' so the rest of
+        // the toolbar doesn't shift left/right every time the label
+        // flips on play / pause.
+        QFontMetrics fm(btn->font());
+        int wPos   = fm.horizontalAdvance("▶ Pos");
+        int wPause = fm.horizontalAdvance("⏸ Pause");
+        btn->setMinimumWidth(qMax(wPos, wPause) + 28); // +padding
+    }
     // onTransportChanged re-labels playPos between ▶ Pos / ⏸ Pause.
     if (auto *btn = qobject_cast<QToolButton*>(tb->widgetForAction(playPatA)))
         { btn->setObjectName("playPatt");  btn->setText("⟳ Patt"); playPattBtn_ = btn; }
