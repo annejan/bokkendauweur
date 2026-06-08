@@ -615,6 +615,13 @@ void MainWindow::buildUi() {
         "QToolButton#playPatt:hover   { background:#B58E38; }"
         "QToolButton#stopBtn    { background:#8C2F2F; color:#FFFFFF; border-color:#E5484D; font-weight:bold; }"
         "QToolButton#stopBtn:hover    { background:#E5484D; }"
+        // Active-state glow. Driven by the dynamic 'active' property set
+        // in tick() once per UI refresh. Bright saturated fill + a thick
+        // bright border so the running transport stands out at a glance.
+        "QToolButton#playBegin[active=\"true\"] { background:#3FB950; color:#FFFFFF; border:2px solid #9CFFB7; }"
+        "QToolButton#playPos[active=\"true\"]   { background:#3892B5; color:#FFFFFF; border:2px solid #9CDDF5; }"
+        "QToolButton#playPatt[active=\"true\"]  { background:#D9A441; color:#1A1A1A; border:2px solid #FFE5A1; }"
+        "QToolButton#stopBtn[active=\"true\"]   { background:#E5484D; color:#FFFFFF; border:2px solid #FFB3B5; }"
     )
         .arg(Theme::C::bgAlt.name())
         .arg(Theme::C::text.name())
@@ -628,14 +635,14 @@ void MainWindow::buildUi() {
     tb->addAction(playPatA);
     tb->addAction(stopA);
     if (auto *btn = qobject_cast<QToolButton*>(tb->widgetForAction(playA)))
-        { btn->setObjectName("playBegin"); btn->setText("⏮ Begin"); }
+        { btn->setObjectName("playBegin"); btn->setText("⏮ Begin"); playBeginBtn_ = btn; }
     if (auto *btn = qobject_cast<QToolButton*>(tb->widgetForAction(playPosA)))
-        { btn->setObjectName("playPos");   btn->setText("▶ Pos"); }
+        { btn->setObjectName("playPos");   btn->setText("▶ Pos"); playPosBtn_ = btn; }
     // We re-label the toolbar button between ▶ Pos and ⏸ Pause in tick().
     if (auto *btn = qobject_cast<QToolButton*>(tb->widgetForAction(playPatA)))
-        { btn->setObjectName("playPatt");  btn->setText("⧈ Patt"); }
+        { btn->setObjectName("playPatt");  btn->setText("⧈ Patt"); playPattBtn_ = btn; }
     if (auto *btn = qobject_cast<QToolButton*>(tb->widgetForAction(stopA)))
-        { btn->setObjectName("stopBtn");   btn->setText("⏹ Stop"); }
+        { btn->setObjectName("stopBtn");   btn->setText("⏹ Stop"); stopBtn_ = btn; }
 
     auto addSpacer = [&](int w = 28) {
         auto *spacer = new QWidget(tb);
@@ -1122,6 +1129,25 @@ void MainWindow::refreshAll() {
         patternBarLen_->setText(QString("$%1")
             .arg(pattlen[p], 2, 16, QLatin1Char('0')).toUpper());
     }
+
+    // Transport glow — light up whichever Play / Stop button reflects the
+    // engine's current state. lastsonginit holds the most recent mode the
+    // playroutine was started in (PLAY_BEGINNING / PLAY_POS / PLAY_PATTERN);
+    // isplaying() flips between running and stopped. We set a dynamic
+    // 'active' property + repolish the style so the per-id selectors in
+    // the toolbar stylesheet kick in.
+    auto setActive = [](QWidget *w, bool on) {
+        if (!w) return;
+        if (w->property("active").toBool() == on) return;
+        w->setProperty("active", on);
+        w->style()->unpolish(w);
+        w->style()->polish(w);
+    };
+    bool playing = isplaying() != 0;
+    setActive(playBeginBtn_, playing && lastsonginit == PLAY_BEGINNING);
+    setActive(playPosBtn_,   playing && lastsonginit == PLAY_POS);
+    setActive(playPattBtn_,  playing && lastsonginit == PLAY_PATTERN);
+    setActive(stopBtn_,      !playing);
 }
 
 // Toolbar shrink/grow operate on the channel the cursor is on. Same byte-

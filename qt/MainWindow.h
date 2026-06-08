@@ -108,6 +108,10 @@ private:
     QDockWidget *orderMapDock_ = nullptr;
     QDockWidget *insQuickDock_ = nullptr;
     StatusStrip *statusStrip_ = nullptr;
+    class QToolButton *playBeginBtn_ = nullptr;
+    class QToolButton *playPosBtn_   = nullptr;
+    class QToolButton *playPattBtn_  = nullptr;
+    class QToolButton *stopBtn_      = nullptr;
     QWidget     *patternBar_ = nullptr;       // toolbar above the stack —
     QLabel      *patternBarOct_ = nullptr;    // only visible on Pattern
     QLabel      *patternBarLen_ = nullptr;    // editor.
