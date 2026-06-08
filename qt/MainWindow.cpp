@@ -629,20 +629,22 @@ void MainWindow::buildUi() {
         .arg(Theme::C::sep.name())
         .arg(Theme::C::editRow.name()));
 
-    // Transport group: distinct color per play variant + red stop
+    // Transport group: three buttons — Begin, Pos (which doubles as
+    // Pause while playing), Patt. Stop dropped from the toolbar because
+    // it's a functional duplicate of Pos-toggle-while-playing: both call
+    // stopsong(), and the next Pos always restarts from the current
+    // cursor anyway. Stop still lives on F4 + the Play menu for users
+    // who want the explicit keyboard shortcut.
     tb->addAction(playA);
     tb->addAction(playPosA);
     tb->addAction(playPatA);
-    tb->addAction(stopA);
     if (auto *btn = qobject_cast<QToolButton*>(tb->widgetForAction(playA)))
         { btn->setObjectName("playBegin"); btn->setText("⏮ Begin"); playBeginBtn_ = btn; }
     if (auto *btn = qobject_cast<QToolButton*>(tb->widgetForAction(playPosA)))
         { btn->setObjectName("playPos");   btn->setText("▶ Pos"); playPosBtn_ = btn; }
-    // We re-label the toolbar button between ▶ Pos and ⏸ Pause in tick().
+    // onTransportChanged re-labels playPos between ▶ Pos / ⏸ Pause.
     if (auto *btn = qobject_cast<QToolButton*>(tb->widgetForAction(playPatA)))
         { btn->setObjectName("playPatt");  btn->setText("⧈ Patt"); playPattBtn_ = btn; }
-    if (auto *btn = qobject_cast<QToolButton*>(tb->widgetForAction(stopA)))
-        { btn->setObjectName("stopBtn");   btn->setText("⏹ Stop"); stopBtn_ = btn; }
 
     auto addSpacer = [&](int w = 28) {
         auto *spacer = new QWidget(tb);
@@ -1144,24 +1146,18 @@ void MainWindow::refreshAll() {
         w->style()->polish(w);
     };
     bool playing = isplaying() != 0;
-    // 'Play' glow rule:
-    //   - PLAY_BEGINNING: Begin button glows alone.
-    //   - PLAY_POS:        Pos button glows (it shows the Pause label
-    //                      while playing — see onTransportChanged).
-    //   - PLAY_PATTERN:    Patt + Begin glow together (the song is
-    //                      effectively playing on repeat, so both
-    //                      'play' and 'patt' read as active).
-    //   - !playing && pausedAtPos_: Pos glows (showing 'Pos' again
-    //                      so the user knows the button will resume).
-    //   - !playing && !pausedAtPos_: Stop glows (engine is fully
-    //                      stopped, no pause state to resume).
+    // Glow rule:
+    //   PLAY_BEGINNING running      -> Begin
+    //   PLAY_POS running            -> Pos (button label is 'Pause')
+    //   PLAY_PATTERN running        -> Begin + Patt (song on repeat)
+    //   not playing, pausedAtPos_   -> Pos (button label is 'Pos' again)
+    //   not playing, !pausedAtPos_  -> no glow
     bool playBegin = playing && lastsonginit == PLAY_BEGINNING;
     bool playPos   = playing && lastsonginit == PLAY_POS;
     bool playPatt  = playing && lastsonginit == PLAY_PATTERN;
     setActive(playBeginBtn_, playBegin || playPatt);
     setActive(playPosBtn_,   playPos   || (!playing && pausedAtPos_));
     setActive(playPattBtn_,  playPatt);
-    setActive(stopBtn_,      !playing && !pausedAtPos_);
 }
 
 // Toolbar shrink/grow operate on the channel the cursor is on. Same byte-
