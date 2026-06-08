@@ -1,5 +1,7 @@
 # GoatTracker 2 — Qt edition
 
+![GoatTracker 2 Qt edition — pattern editor with dark theme, transport toolbar, per-instrument colour band, ADSR shape preview and order map](assets/screenshot-gt2-qt.png)
+
 Modern Qt6 frontend for [GoatTracker 2](http://covertbitops.c64.org/) by
 Lasse Öörni, the Commodore 64 SID chip tracker.
 
