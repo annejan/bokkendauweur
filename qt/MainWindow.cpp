@@ -1144,10 +1144,24 @@ void MainWindow::refreshAll() {
         w->style()->polish(w);
     };
     bool playing = isplaying() != 0;
-    setActive(playBeginBtn_, playing && lastsonginit == PLAY_BEGINNING);
-    setActive(playPosBtn_,   playing && lastsonginit == PLAY_POS);
-    setActive(playPattBtn_,  playing && lastsonginit == PLAY_PATTERN);
-    setActive(stopBtn_,      !playing);
+    // 'Play' glow rule:
+    //   - PLAY_BEGINNING: Begin button glows alone.
+    //   - PLAY_POS:        Pos button glows (it shows the Pause label
+    //                      while playing — see onTransportChanged).
+    //   - PLAY_PATTERN:    Patt + Begin glow together (the song is
+    //                      effectively playing on repeat, so both
+    //                      'play' and 'patt' read as active).
+    //   - !playing && pausedAtPos_: Pos glows (showing 'Pos' again
+    //                      so the user knows the button will resume).
+    //   - !playing && !pausedAtPos_: Stop glows (engine is fully
+    //                      stopped, no pause state to resume).
+    bool playBegin = playing && lastsonginit == PLAY_BEGINNING;
+    bool playPos   = playing && lastsonginit == PLAY_POS;
+    bool playPatt  = playing && lastsonginit == PLAY_PATTERN;
+    setActive(playBeginBtn_, playBegin || playPatt);
+    setActive(playPosBtn_,   playPos   || (!playing && pausedAtPos_));
+    setActive(playPattBtn_,  playPatt);
+    setActive(stopBtn_,      !playing && !pausedAtPos_);
 }
 
 // Toolbar shrink/grow operate on the channel the cursor is on. Same byte-
@@ -1200,15 +1214,18 @@ bool MainWindow::eventFilter(QObject *o, QEvent *e) {
 
 void MainWindow::playFromBeginning() {
     followplay = 1;
+    pausedAtPos_ = false;
     initsong(esnum, PLAY_BEGINNING);
     refreshAll();
 }
 void MainWindow::playFromPos() {
     if (isplaying()) {
         stopsong();
+        pausedAtPos_ = true;
         statusStrip_->showMessage("Paused");
     } else {
         followplay = 1;
+        pausedAtPos_ = false;
         // initsongpos() consumes startpattpos in playroutine — that's the
         // path that actually survives, because initsong() (no -pos) sets
         // startpattpos=0 and the playroutine then overwrites every chn[c]
@@ -1229,10 +1246,15 @@ void MainWindow::playPattern() {
     }
     int start = eppos;
     if (start < 0) start = 0;
+    pausedAtPos_ = false;
     initsongpos(esnum, PLAY_PATTERN, start);
     refreshAll();
 }
-void MainWindow::stopSong()          { stopsong(); refreshAll(); }
+void MainWindow::stopSong() {
+    stopsong();
+    pausedAtPos_ = false;
+    refreshAll();
+}
 
 void MainWindow::muteCurrentChannel() {
     mutechannel(epchn);

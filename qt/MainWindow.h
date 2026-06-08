@@ -112,6 +112,11 @@ private:
     class QToolButton *playPosBtn_   = nullptr;
     class QToolButton *playPattBtn_  = nullptr;
     class QToolButton *stopBtn_      = nullptr;
+    // True when the user toggled the Pos button to pause an in-progress
+    // playback (PLAY_POS or PLAY_PATTERN). Cleared by any explicit Begin /
+    // Patt / Stop click, or by the next Pos-resume. Used to drive the
+    // Pos / Pause button glow while paused.
+    bool pausedAtPos_ = false;
     QWidget     *patternBar_ = nullptr;       // toolbar above the stack —
     QLabel      *patternBarOct_ = nullptr;    // only visible on Pattern
     QLabel      *patternBarLen_ = nullptr;    // editor.
