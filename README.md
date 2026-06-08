@@ -5,7 +5,7 @@ Lasse Öörni, the Commodore 64 SID chip tracker.
 
 This fork keeps full `.sng` and `.ins` file compatibility with the
 original SDL build (v2.77) while replacing the renderer and audio backend
-with native Qt6 widgets and `QAudioSink`. Extends the engine with:
+with native Qt6 widgets and a PortAudio backend. Extends the engine with:
 
 - libresidfp 2.x SID emulator (replaces bundled reSID + reSID-fp)
 - runtime mono ↔ dual-SID / 6-channel toggle, hybrid 6581 + 8580 setups
@@ -17,35 +17,55 @@ with native Qt6 widgets and `QAudioSink`. Extends the engine with:
 
 ## Building
 
-You need Qt 6, libsdl1.2-compat, libjack, qt6-multimedia-dev, cmake, g++.
+Requires Qt 6, SDL 1.2 (or sdl12-compat), JACK, PortAudio, CMake and a
+C++17 compiler.
 
-On Debian / Ubuntu:
-
-```sh
-sudo apt install qt6-base-dev qt6-multimedia-dev libsdl1.2-dev \
-                 libjack-jackd2-dev cmake g++
-```
-
-Then from the repo root:
+### Linux (Debian / Ubuntu)
 
 ```sh
+sudo apt install qt6-base-dev libsdl1.2-dev libjack-jackd2-dev \
+                 portaudio19-dev cmake g++ ninja-build
 cmake -S . -B build
 cmake --build build -j
 ```
 
-Three binaries land in `build/`:
+### macOS (Homebrew)
 
-| binary           | purpose                                                        |
-| ---------------- | -------------------------------------------------------------- |
-| `goattrk2-qt`    | the editor — main app                                          |
-| `gt2reloc`       | CLI packer / relocator (PRG / SID / BIN export)                |
-| (legacy SDL bin) | the original SDL build still lives in `src/`; `cd src && make` |
+```sh
+brew install qt sdl12-compat jack portaudio cmake ninja pkg-config
+cmake -S . -B build \
+  -DCMAKE_PREFIX_PATH="$(brew --prefix qt);$(brew --prefix)" \
+  -DCMAKE_C_FLAGS="-I$(brew --prefix)/include" \
+  -DCMAKE_CXX_FLAGS="-I$(brew --prefix)/include"
+cmake --build build -j
+```
+
+### Windows (MSYS2 / MinGW64)
+
+From a MINGW64 shell:
+
+```sh
+pacman -S --needed mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake \
+  mingw-w64-x86_64-ninja mingw-w64-x86_64-pkgconf \
+  mingw-w64-x86_64-qt6-base mingw-w64-x86_64-qt6-tools \
+  mingw-w64-x86_64-SDL mingw-w64-x86_64-jack2 mingw-w64-x86_64-portaudio
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+```
+
+Three binaries land in `build/qt/`:
+
+| binary        | purpose                                          |
+| ------------- | ------------------------------------------------ |
+| `goattrk2-qt` | the editor — main app                            |
+| `gt2reloc`    | CLI packer / relocator (PRG / SID / BIN export)  |
+| `sid2sng`     | CLI converter: `.sid` → `.sng` (opening `.sid`)  |
 
 ## Running
 
 ```sh
-./build/goattrk2-qt
-./build/goattrk2-qt examples/dojo.sng
+./build/qt/goattrk2-qt
+./build/qt/goattrk2-qt examples/dojo.sng
 ```
 
 CLI options follow the historic GoatTracker layout; see `goat_tracker_commands.pdf`
@@ -54,7 +74,7 @@ or run `--help`.
 For headless / scripted use:
 
 ```sh
-./build/goattrk2-qt --rpc --platform offscreen
+./build/qt/goattrk2-qt --rpc --platform offscreen
 ```
 
 then pipe JSON one line per command on stdin. The protocol is documented
