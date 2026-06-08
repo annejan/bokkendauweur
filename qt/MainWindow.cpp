@@ -1198,7 +1198,11 @@ bool MainWindow::eventFilter(QObject *o, QEvent *e) {
     return QMainWindow::eventFilter(o, e);
 }
 
-void MainWindow::playFromBeginning() { followplay = 1; initsong(esnum, PLAY_BEGINNING); }
+void MainWindow::playFromBeginning() {
+    followplay = 1;
+    initsong(esnum, PLAY_BEGINNING);
+    refreshAll();
+}
 void MainWindow::playFromPos() {
     if (isplaying()) {
         stopsong();
@@ -1215,6 +1219,7 @@ void MainWindow::playFromPos() {
         if (start < 0) start = 0;
         initsongpos(esnum, PLAY_POS, start);
     }
+    refreshAll();
 }
 void MainWindow::playPattern() {
     followplay = 1;
@@ -1225,8 +1230,9 @@ void MainWindow::playPattern() {
     int start = eppos;
     if (start < 0) start = 0;
     initsongpos(esnum, PLAY_PATTERN, start);
+    refreshAll();
 }
-void MainWindow::stopSong()          { stopsong(); }
+void MainWindow::stopSong()          { stopsong(); refreshAll(); }
 
 void MainWindow::muteCurrentChannel() {
     mutechannel(epchn);
