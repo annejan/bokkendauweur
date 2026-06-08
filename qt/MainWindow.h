@@ -117,6 +117,11 @@ private:
     // Patt / Stop click, or by the next Pos-resume. Used to drive the
     // Pos / Pause button glow while paused.
     bool pausedAtPos_ = false;
+    // Per-channel engine position captured at the moment the user paused
+    // via the Pos toggle. Used to restore play state on the next Pos
+    // resume so we don't end up jumping back to the song start.
+    int  pausedSongptr_[6] = {0,0,0,0,0,0};   // MAX_CHN
+    int  pausedPattRow_ = 0;
     QWidget     *patternBar_ = nullptr;       // toolbar above the stack —
     QLabel      *patternBarOct_ = nullptr;    // only visible on Pattern
     QLabel      *patternBarLen_ = nullptr;    // editor.

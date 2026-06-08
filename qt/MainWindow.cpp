@@ -1227,21 +1227,34 @@ void MainWindow::playFromBeginning() {
 }
 void MainWindow::playFromPos() {
     if (isplaying()) {
+        // Snapshot the engine's per-channel order position + the active
+        // channel's in-pattern row so the next Pos toggle actually
+        // RESUMES from here instead of jumping to song start. Previously
+        // we always re-seeded chn[c].songptr = espos[c] (the editor's
+        // order-cursor, which the user typically left at 0), so pausing
+        // mid-song followed by resume snapped back to order 0.
+        for (int c = 0; c < MAX_CHN; c++) pausedSongptr_[c] = chn[c].songptr;
+        pausedPattRow_ = chn[epchn].pattptr / 4;
         stopsong();
         pausedAtPos_ = true;
         statusStrip_->showMessage("Paused");
     } else {
         followplay = 1;
+        if (pausedAtPos_) {
+            // Resume from the snapshot we took on pause.
+            for (int c = 0; c < MAX_CHN; c++)
+                chn[c].songptr = pausedSongptr_[c];
+            int start = pausedPattRow_;
+            if (start < 0) start = 0;
+            initsongpos(esnum, PLAY_POS, start);
+        } else {
+            // Fresh Pos start from the editor cursor.
+            for (int c = 0; c < MAX_CHN; c++) chn[c].songptr = espos[c];
+            int start = eppos;
+            if (start < 0) start = 0;
+            initsongpos(esnum, PLAY_POS, start);
+        }
         pausedAtPos_ = false;
-        // initsongpos() consumes startpattpos in playroutine — that's the
-        // path that actually survives, because initsong() (no -pos) sets
-        // startpattpos=0 and the playroutine then overwrites every chn[c]
-        // .pattptr with 0. Seeding chn[c].pattptr ourselves before calling
-        // initsong was getting trampled inside playroutine.
-        for (int c = 0; c < MAX_CHN; c++) chn[c].songptr = espos[c];
-        int start = eppos;
-        if (start < 0) start = 0;
-        initsongpos(esnum, PLAY_POS, start);
     }
     refreshAll();
 }
