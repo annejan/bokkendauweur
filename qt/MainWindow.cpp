@@ -466,6 +466,26 @@ void MainWindow::buildUi() {
     // into a wall of colour by default.
     pattern_->setInstrColorsEnabled(true);
 
+    auto *boomA = viewMenu->addAction("&Boomwhacker note colours");
+    boomA->setCheckable(true);
+    boomA->setToolTip(
+        "Paint each note cell in the pattern grid with the Boomwhacker / "
+        "handbell pitch palette: C=red, D=orange, E=yellow, F=green, "
+        "G=light blue, A=dark blue, B=purple. Sharps stay slate. Text "
+        "switches between black and white per cell for contrast. Useful "
+        "for teaching / arranging when reading note names is faster than "
+        "reading note letters.");
+    {
+        QSettings s;
+        bool on = s.value("editor/noteColors", false).toBool();
+        boomA->setChecked(on);
+        pattern_->setNoteColorsEnabled(on);
+    }
+    connect(boomA, &QAction::toggled, this, [this](bool on) {
+        pattern_->setNoteColorsEnabled(on);
+        QSettings s; s.setValue("editor/noteColors", on);
+    });
+
     // ---- Settings menu (microtonal / tuning / keypreset) ---------------
     auto *settingsMenu = menuBar()->addMenu("&Settings");
 

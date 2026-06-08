@@ -57,6 +57,25 @@ extern INSTR instr[MAX_INSTR];
 
 static int shownChannels() { return stereo_mode ? MAX_CHN : 3; }
 
+// Boomwhacker / handbell palette — used for the optional pitch-coloured
+// note column. Indices 0..11 = C..B (semitones from C). The seven natural
+// notes get the canonical Boomwhacker colours sampled from the user's
+// reference image; sharps (C#, D#, F#, G#, A#) use a dim slate so the
+// row still reads as 'a note', just without a pitch class.
+struct BoomColor { QColor bg; QColor fg; };
+static BoomColor boomwhackerColor(int semitone) {
+    switch (((semitone % 12) + 12) % 12) {
+    case 0:  return { QColor(0xD0, 0x3A, 0x2C), QColor(0xFF, 0xFF, 0xFF) }; // C  red
+    case 2:  return { QColor(0xE6, 0x8A, 0x3E), QColor(0x00, 0x00, 0x00) }; // D  orange
+    case 4:  return { QColor(0xF4, 0xD6, 0x3B), QColor(0x00, 0x00, 0x00) }; // E  yellow
+    case 5:  return { QColor(0x3F, 0x9B, 0x3F), QColor(0xFF, 0xFF, 0xFF) }; // F  green
+    case 7:  return { QColor(0x7C, 0xC9, 0xF0), QColor(0x00, 0x00, 0x00) }; // G  light blue
+    case 9:  return { QColor(0x2B, 0x3D, 0xA0), QColor(0xFF, 0xFF, 0xFF) }; // A  dark blue
+    case 11: return { QColor(0x5A, 0x28, 0x95), QColor(0xFF, 0xFF, 0xFF) }; // B  purple
+    default: return { QColor(0x55, 0x60, 0x70), QColor(0xE1, 0xE5, 0xEA) }; // sharps
+    }
+}
+
 PatternView::PatternView(QWidget *parent) : QAbstractScrollArea(parent) {
     QFont mono = Theme::monoFont(11);
     setFont(mono);
@@ -610,8 +629,21 @@ void PatternView::paintEvent(QPaintEvent *) {
                             2 * colWidth, rowHeight);
                 p.fillRect(insBg, instrColor(ins));
             }
-            p.setPen(note == REST || note == KEYOFF || note == KEYON || note < FIRSTNOTE
-                     ? Theme::C::textDim : Theme::C::note);
+            // Boomwhacker / handbell pitch colour on the note cell — only
+            // for real pitched notes. REST / KEYOFF / KEYON keep the
+            // default style so the user can still distinguish them at a
+            // glance.
+            QColor noteFg = (note == REST || note == KEYOFF || note == KEYON
+                             || note < FIRSTNOTE)
+                            ? Theme::C::textDim : Theme::C::note;
+            if (noteColorsOn_ && note >= FIRSTNOTE && note <= LASTNOTE) {
+                int semi = note - FIRSTNOTE;  // 0 = C-0
+                BoomColor bw = boomwhackerColor(semi);
+                QRect noteBg(tx, lineRect.y(), 3 * colWidth, rowHeight);
+                p.fillRect(noteBg, bw.bg);
+                noteFg = bw.fg;
+            }
+            p.setPen(noteFg);
             p.drawText(QPoint(tx, ty), noteStr);
             // White text on the coloured instr cell for contrast when the
             // toggle is on; default instr colour otherwise.

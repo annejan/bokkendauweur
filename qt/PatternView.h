@@ -19,6 +19,8 @@ public slots:
     // around so the painter can still short-circuit a tight loop.
     void setInstrColorsEnabled(bool on) { instrColorsOn_ = on; viewport()->update(); }
     bool instrColorsEnabled() const     { return instrColorsOn_; }
+    void setNoteColorsEnabled(bool on)  { noteColorsOn_ = on; viewport()->update(); }
+    bool noteColorsEnabled() const      { return noteColorsOn_; }
 
 signals:
     void patternEdited();
@@ -52,6 +54,7 @@ private:
 
     int channelAtX(int x) const;
     bool instrColorsOn_ = false;
+    bool noteColorsOn_ = false;
     int lastEppos_ = -1;
     int lastEpchn_ = -1;
     // chn[c].pattptr snapshot taken at the start of refresh() and reused
