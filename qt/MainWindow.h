@@ -28,6 +28,13 @@ public:
     void loadSidFile(const QString &path, const QStringList &extraOpts = {});
     void showAbout();
 
+    // ChiptuneSAK is an OPTIONAL import dependency. If python3 + the
+    // chiptunesak module are importable on the host, the Open Song
+    // dialog offers SID / MIDI / etc; otherwise it only shows .sng.
+    // Result is cached at first call so we don't fork python3 each
+    // time the file dialog opens.
+    bool chiptunesakAvailable();
+
     // Editors call beginEdit() before mutating the song, then endEdit(label)
     // to push the resulting state onto the undo stack with the given label.
     QByteArray beginEdit();
@@ -117,6 +124,9 @@ private:
     // Patt / Stop click, or by the next Pos-resume. Used to drive the
     // Pos / Pause button glow while paused.
     bool pausedAtPos_ = false;
+    // Tri-state cache for chiptunesakAvailable(): -1 = not probed yet,
+    // 0 = absent, 1 = importable.
+    int  chiptunesakCached_ = -1;
     // Per-channel engine position captured at the moment the user paused
     // via the Pos toggle. Used to restore play state on the next Pos
     // resume so we don't end up jumping back to the song start.

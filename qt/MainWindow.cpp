@@ -767,14 +767,94 @@ void MainWindow::loadSongFile(const QString &path) {
 void MainWindow::openSong() {
     QString start = songpath[0] ? QString::fromLocal8Bit(songpath)
                                 : QStandardPaths::writableLocation(QStandardPaths::HomeLocation);
-    QString fn = QFileDialog::getOpenFileName(this, "Open Song", start,
-        "GoatTracker / SID (*.sng *.sid);;SNG (*.sng);;SID (*.sid);;All (*.*)");
+    QString filter;
+    if (chiptunesakAvailable()) {
+        filter = "GoatTracker / SID / MIDI (*.sng *.sid *.mid *.midi);;"
+                 "SNG (*.sng);;SID (*.sid);;MIDI (*.mid *.midi);;All (*.*)";
+    } else {
+        // ChiptuneSAK not on the host -> only the native .sng path is
+        // available. Mention how to enable the extras in the dialog
+        // title so the user knows it's optional, not broken.
+        filter = "SNG (*.sng);;All (*.*)";
+    }
+    QString fn = QFileDialog::getOpenFileName(this, "Open Song", start, filter);
     if (fn.isEmpty()) return;
     if (fn.endsWith(".sid", Qt::CaseInsensitive)) {
+        if (!chiptunesakAvailable()) {
+            QMessageBox::warning(this, "SID import requires ChiptuneSAK",
+                "Importing .sid files needs the ChiptuneSAK Python module.\n\n"
+                "Install with:\n"
+                "  pip install --user chiptunesak\n"
+                "or point GT2_CHIPTUNESAK_PATH at a source checkout, e.g.:\n"
+                "  export GT2_CHIPTUNESAK_PATH=~/work/c64/ChiptuneSAK\n\n"
+                "Restart the editor after installing and the SID / MIDI "
+                "filters will appear in the Open Song dialog.");
+            return;
+        }
         loadSidFile(fn);
         return;
     }
+    // .mid / .midi handled by loadSidFile too via the same wrapper —
+    // the wrapper picks the right ChiptuneSAK importer from the
+    // extension. Anything else funnels through loadSongFile.
+    if (fn.endsWith(".mid",  Qt::CaseInsensitive) ||
+        fn.endsWith(".midi", Qt::CaseInsensitive)) {
+        if (!chiptunesakAvailable()) {
+            QMessageBox::warning(this, "MIDI import requires ChiptuneSAK",
+                "Importing MIDI files needs the ChiptuneSAK Python module. "
+                "See Help > About for installation instructions.");
+            return;
+        }
+        loadSidFile(fn);  // wrapper dispatches by extension
+        return;
+    }
     loadSongFile(fn);
+}
+
+bool MainWindow::chiptunesakAvailable() {
+    if (chiptunesakCached_ >= 0) return chiptunesakCached_ != 0;
+
+    QString py = QStandardPaths::findExecutable("python3");
+    if (py.isEmpty()) py = QStandardPaths::findExecutable("python");
+    if (py.isEmpty()) {
+        qInfo("chiptunesak probe: no python3 / python on PATH");
+        chiptunesakCached_ = 0;
+        return false;
+    }
+
+    // Build PYTHONPATH the same way loadSidFile does so the probe
+    // matches what the importer will see. GT2_CHIPTUNESAK_PATH wins;
+    // otherwise the ~/work/c64/ChiptuneSAK dev fallback; otherwise
+    // rely on site-packages.
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    QString chipPath = qEnvironmentVariable("GT2_CHIPTUNESAK_PATH");
+    if (chipPath.isEmpty()) {
+        const QString dev = QDir::homePath() + "/work/c64/ChiptuneSAK";
+        if (QFileInfo::exists(dev)) chipPath = dev;
+    }
+    if (!chipPath.isEmpty()) {
+        QString existing = env.value("PYTHONPATH");
+        env.insert("PYTHONPATH",
+                   existing.isEmpty() ? chipPath
+                                      : chipPath + ":" + existing);
+    }
+
+    QProcess proc;
+    proc.setProcessEnvironment(env);
+    proc.start(py, QStringList{} << "-c"
+               << "import chiptunesak.sid;import chiptunesak.goat_tracker");
+    if (!proc.waitForFinished(3000)) {
+        proc.kill();
+        proc.waitForFinished(500);
+        qInfo("chiptunesak probe: python3 -c 'import chiptunesak' timed out");
+        chiptunesakCached_ = 0;
+        return false;
+    }
+    chiptunesakCached_ = (proc.exitCode() == 0) ? 1 : 0;
+    qInfo("chiptunesak probe: %s (exit=%d)",
+          chiptunesakCached_ ? "AVAILABLE" : "absent",
+          proc.exitCode());
+    return chiptunesakCached_ != 0;
 }
 
 void MainWindow::showAbout() {

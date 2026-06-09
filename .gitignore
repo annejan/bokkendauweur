@@ -7,3 +7,4 @@ src/bme/datafile
 build/
 qt/build/
 
+ext/chiptunesak/venv/

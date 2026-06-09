@@ -55,7 +55,8 @@ def main() -> int:
 
     try:
         import chiptunesak  # noqa: F401
-        from chiptunesak import SID, GoatTracker, RChirpSong, OnePassLeftToRight
+        from chiptunesak import (SID, GoatTracker, RChirpSong,
+                                 OnePassLeftToRight, MIDI)
     except ImportError as e:
         _die(2,
              "sid_to_sng: ChiptuneSAK is not importable.\n"
@@ -129,11 +130,27 @@ def main() -> int:
         _normalize_rows(song)
         return song
 
+    def _import_midi():
+        # ChiptuneSAK MIDI path imports straight into chirp, then we
+        # raise to rchirp via the standard ChirpSong.to_rchirp() so the
+        # same downstream pipeline (compression + GoatTracker writer)
+        # works.
+        midi = MIDI()
+        chirp_song = midi.to_chirp(args.input)
+        rchirp = chirp_song.to_rchirp()
+        _normalize_rows(rchirp)
+        return rchirp
+
+    ext = os.path.splitext(args.input)[1].lower()
     try:
-        rchirp_song = _import_sid()
+        if ext in (".mid", ".midi"):
+            rchirp_song = _import_midi()
+        else:
+            rchirp_song = _import_sid()
     except Exception:
+        kind = "MIDI" if ext in (".mid", ".midi") else "SID"
         sys.stderr.write(
-            f"sid_to_sng: SID import failed for {args.input}\n"
+            f"sid_to_sng: {kind} import failed for {args.input}\n"
             f"  subtune={args.subtune} seconds={args.seconds}\n"
         )
         traceback.print_exc(file=sys.stderr)
