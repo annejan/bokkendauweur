@@ -556,10 +556,19 @@ void PatternView::paintEvent(QPaintEvent *) {
             // by (its playRow - epchn's playRow) so the channel's own
             // playhead lands at the viewport centre — independent of
             // pattern lengths or loop alignment between channels.
-            int crow;
+            //
+            // Rows OUTSIDE the channel's current pattern (vrow < 0 or
+            // vrow >= plen) render as empty space. The previous wrap
+            // showed the same pattern repeating above and below the
+            // playhead which made it look like the song was repeating
+            // forever — per the user feedback, when the playhead
+            // crosses a pattern boundary the new pattern's content
+            // should be the only thing rolling under the line, with
+            // blank space above it.
+            int crow = -1;          // -1 -> sentinel: nothing to paint
             if (followCenter && plen > 0) {
                 int vrow = playRow_[c] + (r - centerR);
-                crow = ((vrow % plen) + plen) % plen;
+                if (vrow >= 0 && vrow < plen) crow = vrow;
             } else {
                 crow = globalRow;
             }
@@ -614,9 +623,17 @@ void PatternView::paintEvent(QPaintEvent *) {
                 hasFocusRect = true;
             }
 
+            // Follow-centre 'out of pattern' — blank cell. Beat tint /
+            // play row / cursor underlay still showed up (those run off
+            // the viewport row r, not crow), but the pattern content
+            // text doesn't render here.
+            if (followCenter && crow < 0) {
+                continue;
+            }
+
             // End-of-pattern band — only relevant when displaying the raw
-            // pattern (edit mode). Follow-centre wraps crow inside [0, plen)
-            // so we never need to render an END row.
+            // pattern (edit mode). Follow-centre clamps crow to inside
+            // [0, plen) above and bails before this branch.
             if (!followCenter && crow >= plen) {
                 if (crow == plen) {
                     p.fillRect(cellRect, QColor(80, 25, 25));
