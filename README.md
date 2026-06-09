@@ -73,6 +73,86 @@ Three binaries land in `build/qt/`:
 CLI options follow the historic GoatTracker layout; see `goat_tracker_commands.pdf`
 or run `--help`.
 
+## Importing `.sid` / MIDI / other formats (optional)
+
+The editor opens `.sng` files natively. To import `.sid`, MIDI, or other
+formats it shells out to [ChiptuneSAK](https://github.com/c64cryptoboy/ChiptuneSAK),
+a Python toolkit that converts those formats to GoatTracker `.sng`.
+ChiptuneSAK is **optional** — without it the Open Song dialog only shows
+the SNG filter, and everything else in the editor works as usual.
+
+When the editor finds ChiptuneSAK at launch (`python3 -c "import
+chiptunesak"` succeeds), the Open Song dialog adds `*.sid` / `*.mid` /
+`*.midi` filters and the import goes through `ext/chiptunesak/sid_to_sng.py`.
+
+### Install (with [uv](https://docs.astral.sh/uv/))
+
+We use [`uv`](https://github.com/astral-sh/uv) — a fast, no-dependencies
+Python package manager from Astral.
+
+Install `uv` first if you don't have it:
+
+```sh
+# Linux / macOS
+curl -LsSf https://astral.sh/uv/install.sh | sh
+# OR via pipx / Homebrew / cargo:
+brew install uv         # macOS
+cargo install --git https://github.com/astral-sh/uv uv
+```
+
+Then set up ChiptuneSAK next to the editor:
+
+```sh
+# venv + ChiptuneSAK + its deps, into ext/chiptunesak/venv/
+uv venv ext/chiptunesak/venv
+uv pip install --python ext/chiptunesak/venv/bin/python \
+    mido matplotlib numpy more-itertools parameterized
+
+# ChiptuneSAK itself — not on PyPI yet, so clone it
+git clone https://github.com/c64cryptoboy/ChiptuneSAK ~/work/c64/ChiptuneSAK
+```
+
+The editor auto-discovers `~/work/c64/ChiptuneSAK` if `GT2_CHIPTUNESAK_PATH`
+is unset; set the env var for any other path:
+
+```sh
+export GT2_CHIPTUNESAK_PATH=/somewhere/else/ChiptuneSAK
+```
+
+Make `python3` resolve to the venv's interpreter when launching the
+editor (or put the venv first on `PATH`):
+
+```sh
+PATH="$PWD/ext/chiptunesak/venv/bin:$PATH" ./build/qt/goattrk2-qt
+```
+
+Restart the editor after installing — the SID / MIDI filters appear in
+the Open Song dialog.
+
+### Verify
+
+```sh
+PATH="$PWD/ext/chiptunesak/venv/bin:$PATH" \
+PYTHONPATH=~/work/c64/ChiptuneSAK \
+python3 -c "import chiptunesak.sid; import chiptunesak.goat_tracker; print('ok')"
+```
+
+If that prints `ok`, the editor's `Open Song` dialog will show
+`*.sid` / `*.mid` / `*.midi` filters.
+
+### Caveats
+
+ChiptuneSAK is in alpha and runs a 6502 emulator over the SID's player
+code, then quantises the captured register writes into tracker patterns.
+Expect:
+
+- Some SIDs trip an unimplemented 6502 opcode and fail. Roughly 75 % of
+  HVSC SIDs we sampled imported successfully on the first try.
+- The resulting `.sng` is musically close but not byte-identical to the
+  original — it's a best-effort tracker representation, not a re-recording.
+- MIDI import respects channels and approximate note timing; ADSR and
+  filter envelopes are not reconstructed (the SID didn't carry them).
+
 For headless / scripted use:
 
 ```sh
