@@ -44,6 +44,36 @@ def _parse_args() -> argparse.Namespace:
                    help="skip OnePassLeftToRight pattern compression")
     p.add_argument("--min-pattern", type=int, default=8,
                    help="minimum pattern length for the compressor (default 8)")
+
+    # ChiptuneSAK SID importer knobs. Defaults chosen for tracker-
+    # friendly output (long patterns, real per-frame timing) rather
+    # than the ChiptuneSAK defaults which assume MIDI-style export.
+    #
+    # gcf-reduce: ChiptuneSAK's default True scales every row count by
+    # the GCF of inter-event frame gaps. Tunes that only touch SID
+    # regs every N frames collapse to 1/N the rows -> 64-row patterns
+    # turn into 8-row stubs. We default OFF so each engine frame stays
+    # a tracker row.
+    p.add_argument("--gcf-reduce", dest="gcf_reduce",
+                   action="store_true", default=False,
+                   help="ChiptuneSAK: divide row counts by GCF of "
+                        "inter-event gaps (default OFF — keeps "
+                        "per-frame timing so patterns aren't collapsed)")
+    p.add_argument("--no-gate-off-notes", dest="gate_off_notes",
+                   action="store_false", default=True,
+                   help="ChiptuneSAK: skip allowing new note starts "
+                        "while the gate is off (default ON)")
+    p.add_argument("--no-gate-on-assert", dest="assert_gate_on",
+                   action="store_false", default=True,
+                   help="ChiptuneSAK: skip asserting gate-on for "
+                        "every new note (default ON)")
+    p.add_argument("--always-include-freq", action="store_true",
+                   default=False,
+                   help="ChiptuneSAK: emit a freq write on every "
+                        "delta row, not just at note starts")
+    p.add_argument("--vibrato-margin", type=int, default=0,
+                   help="ChiptuneSAK: cents margin for snapping a "
+                        "vibrato'd note back to its previous pitch")
     return p.parse_args()
 
 
@@ -121,7 +151,14 @@ def main() -> int:
 
     def _import_sid():
         sid = SID()
-        sid.set_options(verbose=False)
+        sid.set_options(
+            verbose=False,
+            gcf_row_reduce=args.gcf_reduce,
+            create_gate_off_notes=args.gate_off_notes,
+            assert_gate_on_new_note=args.assert_gate_on,
+            always_include_freq=args.always_include_freq,
+            vibrato_cents_margin=args.vibrato_margin,
+        )
         song = sid.to_rchirp(
             args.input,
             subtune=args.subtune,
