@@ -1026,6 +1026,17 @@ void MainWindow::loadSidFile(const QString &path, const QStringList &extraOpts) 
 
     if (exitCode == 0 && QFile::exists(tmp) && QFileInfo(tmp).size() > 0) {
         loadSongFile(tmp);
+        // loadSongFile stored 'path' as songfilename / songpath, which
+        // points at the /tmp staging file the wrapper wrote. Replace
+        // both with the ORIGINAL source path so the next Open Song
+        // dialog opens in the imported file's directory and Save acts
+        // like a fresh session ('Save As' the user picks the location
+        // — silently overwriting the tmp file would be surprising).
+        const QString absSrc = QFileInfo(path).absoluteFilePath();
+        std::strncpy(songfilename, absSrc.toLocal8Bit().constData(), MAX_FILENAME - 1);
+        songfilename[MAX_FILENAME - 1] = 0;
+        rememberDir(absSrc, songpath, MAX_PATHNAME);
+        setWindowTitle(titleForSong(absSrc + " (imported)"));
         statusStrip_->showMessage(
             QString("Loaded from .sid (ChiptuneSAK): %1")
                 .arg(QFileInfo(path).fileName()));
