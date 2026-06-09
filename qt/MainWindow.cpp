@@ -769,8 +769,9 @@ void MainWindow::openSong() {
                                 : QStandardPaths::writableLocation(QStandardPaths::HomeLocation);
     QString filter;
     if (chiptunesakAvailable()) {
-        filter = "GoatTracker / SID / MIDI (*.sng *.sid *.mid *.midi);;"
-                 "SNG (*.sng);;SID (*.sid);;MIDI (*.mid *.midi);;All (*.*)";
+        filter = "GoatTracker / SID / MIDI / MOD (*.sng *.sid *.mid *.midi *.mod);;"
+                 "SNG (*.sng);;SID (*.sid);;MIDI (*.mid *.midi);;MOD (*.mod);;"
+                 "All (*.*)";
     } else {
         // ChiptuneSAK not on the host -> only the native .sng path is
         // available. Mention how to enable the extras in the dialog
@@ -798,15 +799,21 @@ void MainWindow::openSong() {
         loadSidFile(fn);
         return;
     }
-    // .mid / .midi handled by loadSidFile too via the same wrapper —
-    // the wrapper picks the right ChiptuneSAK importer from the
-    // extension. Anything else funnels through loadSongFile.
+    // .mid / .midi / .mod handled by loadSidFile too via the same
+    // wrapper — sid_to_sng.py dispatches by extension to the right
+    // importer (ChiptuneSAK MIDI for .mid, in-process ProTracker
+    // parser for .mod). Anything else funnels through loadSongFile.
     if (fn.endsWith(".mid",  Qt::CaseInsensitive) ||
-        fn.endsWith(".midi", Qt::CaseInsensitive)) {
+        fn.endsWith(".midi", Qt::CaseInsensitive) ||
+        fn.endsWith(".mod",  Qt::CaseInsensitive)) {
         if (!chiptunesakAvailable()) {
-            QMessageBox::warning(this, "MIDI import requires ChiptuneSAK",
-                "Importing MIDI files needs the ChiptuneSAK Python module. "
-                "See Help > About for installation instructions.");
+            const QString kind = fn.endsWith(".mod", Qt::CaseInsensitive)
+                ? QStringLiteral("MOD") : QStringLiteral("MIDI");
+            QMessageBox::warning(this,
+                QString("%1 import requires ChiptuneSAK").arg(kind),
+                QString("Importing %1 files needs the ChiptuneSAK "
+                        "Python module. See Help > About for "
+                        "installation instructions.").arg(kind));
             return;
         }
         loadSidFile(fn);  // wrapper dispatches by extension

@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 # sid_to_sng.py  --  thin CLI shim that drives ChiptuneSAK
 #
-# usage: sid_to_sng.py <input.sid> <output.sng> [--subtune N] [--seconds S]
-#                                               [--no-compress]
+# usage: sid_to_sng.py <input.{sid,mid,midi,mod}> <output.sng>
+#                      [--subtune N] [--seconds S] [--no-compress]
 #
 # Replaces the old sid2sng path inside qt/MainWindow.cpp::loadSidFile.
-# Chiptunesak imports PSID + many RSID files (sid2sng only handled
-# GoatTracker-generated .sids), so this is a strict superset of what
-# the editor could load before.
+# Dispatches by input extension:
+#   .sid          -> ChiptuneSAK SID importer (6502 emulator capture)
+#   .mid / .midi  -> ChiptuneSAK MIDI importer
+#   .mod          -> in-process ProTracker MOD parser -> MIDI -> ChiptuneSAK
 #
 # ChiptuneSAK must be importable. If you don't have it system-wide, set
 # PYTHONPATH=/path/to/ChiptuneSAK before invoking, e.g. in QProcess env.
@@ -167,25 +168,162 @@ def main() -> int:
         _normalize_rows(song)
         return song
 
-    def _import_midi():
+    def _import_midi(path):
         # ChiptuneSAK MIDI path imports straight into chirp, then we
         # raise to rchirp via the standard ChirpSong.to_rchirp() so the
         # same downstream pipeline (compression + GoatTracker writer)
         # works.
+        #
+        # ChirpSong.to_rchirp() refuses to run on an unquantised song
+        # (raises ChiptuneSAKQuantizationError). Quantise to 16th notes
+        # so freshly-imported MIDI / converted-from-MOD files round to
+        # a tracker grid that fits GoatTracker's row-based layout.
         midi = MIDI()
-        chirp_song = midi.to_chirp(args.input)
+        chirp_song = midi.to_chirp(path)
+        chirp_song.quantize_from_note_name('16')
         rchirp = chirp_song.to_rchirp()
         _normalize_rows(rchirp)
         return rchirp
 
+    def _import_mod():
+        # ChiptuneSAK has no MOD importer, so we parse the ProTracker
+        # / NoiseTracker MOD format inline and emit a MIDI file via
+        # mido (already a ChiptuneSAK runtime dep). Then feed it
+        # through the regular MIDI pipeline.
+        #
+        # We only honour: note + sample (-> MIDI channel program),
+        # row-by-row timing at the default tempo. Effects beyond
+        # Fxx (set speed/tempo) are ignored — good enough for a
+        # tracker-grid import, not for sample-accurate playback.
+        import tempfile
+        import mido
+
+        with open(args.input, "rb") as f:
+            data = f.read()
+        if len(data) < 1084:
+            raise ValueError("MOD file too short (< 1084 bytes)")
+
+        magic = data[1080:1084]
+        n_channels = {
+            b"M.K.": 4, b"M!K!": 4, b"FLT4": 4, b"4CHN": 4,
+            b"6CHN": 6, b"8CHN": 8, b"FLT8": 8,
+        }.get(magic)
+        if n_channels is None:
+            # 15-sample SoundTracker (no magic) — file is too short
+            # to contain a magic ID after 31 samples. If we got here,
+            # treat as unsupported.
+            raise ValueError(
+                f"unsupported MOD magic {magic!r} "
+                "(only M.K. / FLT4 / 4-8CHN supported)")
+
+        song_len = data[950]
+        order = list(data[952:952 + song_len])
+        n_patterns = max(order) + 1 if order else 0
+        pattern_data = data[1084:1084 + n_patterns * 64 * n_channels * 4]
+
+        # ProTracker period table — Amiga periods for C-1..B-3 (3 octaves).
+        PERIODS = [
+            856, 808, 762, 720, 678, 640, 604, 570, 538, 508, 480, 453,  # oct 1
+            428, 404, 381, 360, 339, 320, 302, 285, 269, 254, 240, 226,  # oct 2
+            214, 202, 190, 180, 170, 160, 151, 143, 135, 127, 120, 113,  # oct 3
+        ]
+        # MOD C-1 → MIDI 36 (C2). Standard ProTracker convention.
+        MIDI_BASE = 36
+
+        def period_to_midi(period):
+            if period == 0:
+                return None
+            # Nearest index in PERIODS.
+            best_i, best_d = 0, abs(PERIODS[0] - period)
+            for i, p in enumerate(PERIODS[1:], 1):
+                d = abs(p - period)
+                if d < best_d:
+                    best_i, best_d = i, d
+            return MIDI_BASE + best_i
+
+        # Build a multi-track MIDI file: one MIDI track per MOD channel.
+        # Default MOD tempo: speed=6 ticks/row at 50 Hz (CIA timer),
+        # giving ~120 ms / row. PPQ=24 and tempo 500000 us/qn (120 BPM)
+        # gives 6 ticks/16th = one MOD row per 6 ticks.
+        PPQ = 24
+        TICKS_PER_ROW = 6
+        mf = mido.MidiFile(ticks_per_beat=PPQ)
+        # Per-channel state: list of (track, last_note, last_tick).
+        tracks = []
+        for c in range(n_channels):
+            t = mido.MidiTrack()
+            t.append(mido.MetaMessage('set_tempo', tempo=500_000, time=0))
+            t.append(mido.Message('program_change', program=0,
+                                  channel=c % 16, time=0))
+            mf.tracks.append(t)
+            tracks.append({"track": t, "note": None, "last": 0})
+
+        global_row = 0
+        for pat_idx in order:
+            pat_off = pat_idx * 64 * n_channels * 4
+            for row in range(64):
+                row_off = pat_off + row * n_channels * 4
+                for c in range(n_channels):
+                    co = row_off + c * 4
+                    b0, b1, b2, b3 = pattern_data[co:co + 4]
+                    period = ((b0 & 0x0F) << 8) | b1
+                    midi_note = period_to_midi(period)
+                    if midi_note is None:
+                        continue
+                    state = tracks[c]
+                    tick_now = global_row * TICKS_PER_ROW
+                    # Stop previous note on this channel.
+                    if state["note"] is not None:
+                        delta = tick_now - state["last"]
+                        state["track"].append(mido.Message(
+                            'note_off', note=state["note"],
+                            velocity=0, channel=c % 16, time=delta))
+                        state["last"] = tick_now
+                    delta = tick_now - state["last"]
+                    state["track"].append(mido.Message(
+                        'note_on', note=midi_note, velocity=96,
+                        channel=c % 16, time=delta))
+                    state["note"] = midi_note
+                    state["last"] = tick_now
+                global_row += 1
+
+        # Final note-offs at song end.
+        end_tick = global_row * TICKS_PER_ROW
+        for c in range(n_channels):
+            state = tracks[c]
+            if state["note"] is not None:
+                delta = end_tick - state["last"]
+                state["track"].append(mido.Message(
+                    'note_off', note=state["note"],
+                    velocity=0, channel=c % 16, time=delta))
+
+        with tempfile.NamedTemporaryFile(
+                suffix=".mid", delete=False) as tf:
+            tmp_mid = tf.name
+        mf.save(tmp_mid)
+        try:
+            return _import_midi(tmp_mid)
+        finally:
+            try:
+                os.unlink(tmp_mid)
+            except OSError:
+                pass
+
     ext = os.path.splitext(args.input)[1].lower()
     try:
         if ext in (".mid", ".midi"):
-            rchirp_song = _import_midi()
+            rchirp_song = _import_midi(args.input)
+        elif ext == ".mod":
+            rchirp_song = _import_mod()
         else:
             rchirp_song = _import_sid()
     except Exception:
-        kind = "MIDI" if ext in (".mid", ".midi") else "SID"
+        if ext in (".mid", ".midi"):
+            kind = "MIDI"
+        elif ext == ".mod":
+            kind = "MOD"
+        else:
+            kind = "SID"
         sys.stderr.write(
             f"sid_to_sng: {kind} import failed for {args.input}\n"
             f"  subtune={args.subtune} seconds={args.seconds}\n"
