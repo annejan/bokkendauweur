@@ -783,12 +783,16 @@ void MainWindow::openSong() {
         if (!chiptunesakAvailable()) {
             QMessageBox::warning(this, "SID import requires ChiptuneSAK",
                 "Importing .sid files needs the ChiptuneSAK Python module.\n\n"
-                "Install with:\n"
-                "  pip install --user chiptunesak\n"
-                "or point GT2_CHIPTUNESAK_PATH at a source checkout, e.g.:\n"
-                "  export GT2_CHIPTUNESAK_PATH=~/work/c64/ChiptuneSAK\n\n"
-                "Restart the editor after installing and the SID / MIDI "
-                "filters will appear in the Open Song dialog.");
+                "Install with uv (recommended):\n"
+                "  uv venv ext/chiptunesak/venv\n"
+                "  uv pip install --python ext/chiptunesak/venv/bin/python \\\n"
+                "      mido matplotlib numpy more-itertools parameterized\n"
+                "  git clone https://github.com/c64cryptoboy/ChiptuneSAK\n"
+                "  export GT2_CHIPTUNESAK_PATH=/path/to/ChiptuneSAK\n\n"
+                "Or pip install chiptunesak into your system Python. "
+                "Restart the editor after installing — the SID / MIDI "
+                "filters will appear in the Open Song dialog. See the "
+                "README for full instructions.");
             return;
         }
         loadSidFile(fn);
@@ -824,14 +828,10 @@ bool MainWindow::chiptunesakAvailable() {
 
     // Build PYTHONPATH the same way loadSidFile does so the probe
     // matches what the importer will see. GT2_CHIPTUNESAK_PATH wins;
-    // otherwise the ~/work/c64/ChiptuneSAK dev fallback; otherwise
-    // rely on site-packages.
+    // otherwise we rely on whatever's on the system Python's
+    // site-packages (e.g. a pip install).
     QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
     QString chipPath = qEnvironmentVariable("GT2_CHIPTUNESAK_PATH");
-    if (chipPath.isEmpty()) {
-        const QString dev = QDir::homePath() + "/work/c64/ChiptuneSAK";
-        if (QFileInfo::exists(dev)) chipPath = dev;
-    }
     if (!chipPath.isEmpty()) {
         QString existing = env.value("PYTHONPATH");
         env.insert("PYTHONPATH",
@@ -936,9 +936,10 @@ void MainWindow::showAbout() {
 // then required hand-picked flag combinations).
 //
 // ChiptuneSAK is pure Python and must be importable. If it isn't on
-// the system Python's import path, drop it in ~/work/c64/ChiptuneSAK
-// (the path baked into the GT2_CHIPTUNESAK_PATH fallback below) or
-// export PYTHONPATH/GT2_CHIPTUNESAK_PATH before launching the editor.
+// the system Python's site-packages, point GT2_CHIPTUNESAK_PATH at a
+// source checkout (or set PYTHONPATH yourself before launching the
+// editor). See the README 'Importing .sid / MIDI' section for the
+// uv-based install recipe.
 // extraOpts is kept on the signature for ABI compatibility with the
 // previous loader but is no longer consulted.
 void MainWindow::loadSidFile(const QString &path, const QStringList &extraOpts) {
@@ -977,13 +978,9 @@ void MainWindow::loadSidFile(const QString &path, const QStringList &extraOpts) 
 
     QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
     // Allow the user to point at a checkout of ChiptuneSAK without
-    // installing it. We honour GT2_CHIPTUNESAK_PATH first; otherwise
-    // fall back to the well-known dev location.
+    // installing it. GT2_CHIPTUNESAK_PATH controls this; otherwise
+    // we rely on the system Python's site-packages (pip install).
     QString chipPath = qEnvironmentVariable("GT2_CHIPTUNESAK_PATH");
-    if (chipPath.isEmpty()) {
-        const QString devPath = QDir::homePath() + "/work/c64/ChiptuneSAK";
-        if (QFileInfo::exists(devPath)) chipPath = devPath;
-    }
     if (!chipPath.isEmpty()) {
         const QString existing = env.value("PYTHONPATH");
         env.insert("PYTHONPATH",

@@ -100,31 +100,28 @@ brew install uv         # macOS
 cargo install --git https://github.com/astral-sh/uv uv
 ```
 
-Then set up ChiptuneSAK next to the editor:
+Then set up ChiptuneSAK next to the editor. Pick any directory for the
+clone — examples below use `$HOME/ChiptuneSAK`, swap in whatever you
+prefer:
 
 ```sh
-# venv + ChiptuneSAK + its deps, into ext/chiptunesak/venv/
+# 1. Clone ChiptuneSAK (not on PyPI yet)
+git clone https://github.com/c64cryptoboy/ChiptuneSAK "$HOME/ChiptuneSAK"
+
+# 2. Create a venv beside the editor and install ChiptuneSAK's deps
 uv venv ext/chiptunesak/venv
 uv pip install --python ext/chiptunesak/venv/bin/python \
     mido matplotlib numpy more-itertools parameterized
 
-# ChiptuneSAK itself — not on PyPI yet, so clone it
-git clone https://github.com/c64cryptoboy/ChiptuneSAK ~/work/c64/ChiptuneSAK
-```
+# 3. Tell the editor where ChiptuneSAK lives
+export GT2_CHIPTUNESAK_PATH="$HOME/ChiptuneSAK"
 
-The editor auto-discovers `~/work/c64/ChiptuneSAK` if `GT2_CHIPTUNESAK_PATH`
-is unset; set the env var for any other path:
-
-```sh
-export GT2_CHIPTUNESAK_PATH=/somewhere/else/ChiptuneSAK
-```
-
-Make `python3` resolve to the venv's interpreter when launching the
-editor (or put the venv first on `PATH`):
-
-```sh
+# 4. Make python3 resolve to the venv, then launch
 PATH="$PWD/ext/chiptunesak/venv/bin:$PATH" ./build/qt/goattrk2-qt
 ```
+
+`GT2_CHIPTUNESAK_PATH` is the only path the editor cares about. Set it
+once in your shell rc to make every launch pick up the importer.
 
 Restart the editor after installing — the SID / MIDI filters appear in
 the Open Song dialog.
@@ -133,7 +130,7 @@ the Open Song dialog.
 
 ```sh
 PATH="$PWD/ext/chiptunesak/venv/bin:$PATH" \
-PYTHONPATH=~/work/c64/ChiptuneSAK \
+PYTHONPATH="$HOME/ChiptuneSAK" \
 python3 -c "import chiptunesak.sid; import chiptunesak.goat_tracker; print('ok')"
 ```
 
