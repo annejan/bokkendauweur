@@ -137,6 +137,11 @@ python3 -c "import chiptunesak.sid; import chiptunesak.goat_tracker; print('ok')
 If that prints `ok`, the editor's `Open Song` dialog will show
 `*.sid` / `*.mid` / `*.midi` filters.
 
+> ⚠️ **Watch out:** `~` is **not expanded** inside double quotes, so
+> `PYTHONPATH="~/path"` ends up as the literal string `~/path` and the
+> import fails. Always use `"$HOME/path"` or an absolute path. Same
+> applies to `GT2_CHIPTUNESAK_PATH`.
+
 ### Caveats
 
 ChiptuneSAK is in alpha and runs a 6502 emulator over the SID's player
