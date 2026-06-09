@@ -488,6 +488,25 @@ void MainWindow::buildUi() {
         QSettings s; s.setValue("editor/noteColors", on);
     });
 
+    auto *sidIndA = viewMenu->addAction("&SID waveform indicators");
+    sidIndA->setCheckable(true);
+    sidIndA->setToolTip(
+        "Show the per-voice lit-box block above each channel: T S P (triangle "
+        "/ sawtooth / pulse) in the first column, N y r F (noise / sync / ring "
+        "/ filter route) in the second. Boxes light up in real time from the "
+        "live SID control register. Off reclaims the space for the VU bar + "
+        "scope curve.");
+    {
+        QSettings s;
+        bool on = s.value("editor/sidIndicators", true).toBool();
+        sidIndA->setChecked(on);
+        pattern_->setSidIndicatorsEnabled(on);
+    }
+    connect(sidIndA, &QAction::toggled, this, [this](bool on) {
+        pattern_->setSidIndicatorsEnabled(on);
+        QSettings s; s.setValue("editor/sidIndicators", on);
+    });
+
     // ---- Settings menu (microtonal / tuning / keypreset) ---------------
     auto *settingsMenu = menuBar()->addMenu("&Settings");
 

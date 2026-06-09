@@ -21,6 +21,9 @@ public slots:
     bool instrColorsEnabled() const     { return instrColorsOn_; }
     void setNoteColorsEnabled(bool on)  { noteColorsOn_ = on; viewport()->update(); }
     bool noteColorsEnabled() const      { return noteColorsOn_; }
+    // Per-voice SID waveform / flag indicator block in the vu+scope strip.
+    void setSidIndicatorsEnabled(bool on) { sidIndOn_ = on; viewport()->update(); }
+    bool sidIndicatorsEnabled() const     { return sidIndOn_; }
 
 signals:
     void patternEdited();
@@ -55,6 +58,7 @@ private:
     int channelAtX(int x) const;
     bool instrColorsOn_ = false;
     bool noteColorsOn_ = false;
+    bool sidIndOn_ = true;
     int lastEppos_ = -1;
     int lastEpchn_ = -1;
     // chn[c].pattptr snapshot taken at the start of refresh() and reused

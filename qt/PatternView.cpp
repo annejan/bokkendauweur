@@ -414,20 +414,14 @@ void PatternView::paintEvent(QPaintEvent *) {
             p.setFont(font());
             continue;
         }
-        // Waveform / flag indicator block sits at the right edge of the
-        // VU bar. Reads the live SID control register for this voice
-        // (sidreg / sidreg2 for SID1 / SID2) — bits 4..7 are TRI / SAW
-        // / PUL / NOI, bits 1..2 are SYNC / RING. The $17 filter
-        // register's voice-enable bits show as F. Lit glyphs use a hue
-        // per waveform family so the user can tell at a glance which
-        // generators a patch is actually driving each frame.
-        //
-        // Block reserves ~6 glyphs × ~7 px = ~42 px on the right; the
-        // VU fill below tops out at that boundary so the meter never
-        // paints over the glyphs.
-        const int indGlyphs = 7;     // T S P N | S R F
-        const int indGlyphW = 7;
-        const int indW = indGlyphs * indGlyphW;
+        // Waveform / flag indicators sit in a fixed-width block at the
+        // right edge, spanning the FULL height of vu strip + scope strip
+        // (rendered after both loops below). VU bar shrinks by indW so
+        // the meter fill never paints over the indicator block. When
+        // the View ▸ SID indicators toggle is off, indW=0 and the
+        // meter reclaims the full cell width.
+        const int indColW = 16;
+        const int indW = sidIndOn_ ? indColW * 2 : 0;
         const int meterW = qMax(8, w - indW - 4);
         int filled = (int)((double)levels[c] / 255.0 * (meterW - 2));
         if (filled > 0) {
@@ -441,40 +435,78 @@ void PatternView::paintEvent(QPaintEvent *) {
             if (y > 0) { p.fillRect(QRect(xx, vuPad + 1, y, vuH - 2), Theme::C::vuAmber); rem -= y; xx += y; }
             if (rem > 0) p.fillRect(QRect(xx, vuPad + 1, rem, vuH - 2), Theme::C::vuRed);
         }
-        // SID register window. Voices 0..2 -> sidreg, 3..5 -> sidreg2.
-        const unsigned char *regs = (c < 3) ? sidreg : sidreg2;
-        int v = c % 3;
-        unsigned char ctrl = regs[v * 7 + 4];
-        unsigned char filt = regs[0x17];
-        bool tri  = (ctrl >> 4) & 1;
-        bool saw  = (ctrl >> 5) & 1;
-        bool pul  = (ctrl >> 6) & 1;
-        bool noi  = (ctrl >> 7) & 1;
-        bool sync = (ctrl >> 1) & 1;
-        bool ring = (ctrl >> 2) & 1;
-        bool filtOn = (filt >> v) & 1;
-        struct Ind { const char *g; bool on; QColor lit; };
-        Ind inds[] = {
-            { "T", tri,    QColor(0x6E, 0xC8, 0xFF) },
-            { "S", saw,    QColor(0xFF, 0xC4, 0x6E) },
-            { "P", pul,    QColor(0x9C, 0xFF, 0x9C) },
-            { "N", noi,    QColor(0xC9, 0xA0, 0xFF) },
-            { "y", sync,   QColor(0xFF, 0x9E, 0x9E) },
-            { "r", ring,   QColor(0xFF, 0x9E, 0x9E) },
-            { "F", filtOn, QColor(0xFF, 0xD4, 0x40) },
-        };
-        int indX0 = x + w - indW;
+    }
+
+    // ---- SID waveform / flag indicator block ----------------------------
+    // Skipped when the user toggles them off via View ▸ SID indicators.
+    if (sidIndOn_)
+    // Two columns of lit boxes, one block per channel, spanning the full
+    // height of (vu strip + scope strip):
+    //   Col 1 (3 cells, top->bot): T  triangle
+    //                              S  sawtooth
+    //                              P  pulse
+    //   Col 2 (4 cells, top->bot): N  noise
+    //                              y  sync
+    //                              r  ring mod
+    //                              F  filter route
+    // Box LIGHTS UP (filled with the family colour, white glyph) when
+    // the bit is set in the live SID control register; off boxes paint a
+    // dim background + dim glyph. Reads sidreg for voices 0..2 and
+    // sidreg2 for voices 3..5 (stereo build).
+    {
+        const int indColW = 16;
+        const int indW = indColW * 2;
+        const int indH = vuStripH_ + scopeStripH_;
         QFont gf = p.font();
         gf.setBold(true);
         p.setFont(gf);
-        // Use the full strip height (vuStripH_) for the glyph row so the
-        // text isn't clipped by the toolbar's bottom edge — the VU bar
-        // proper sits inside vuPad-padded space (vuH < vuStripH_) but the
-        // glyphs want the whole strip.
-        for (int i = 0; i < indGlyphs; i++) {
-            QRect gr(indX0 + i * indGlyphW, 0, indGlyphW, vuStripH_);
-            p.setPen(inds[i].on ? inds[i].lit : Theme::C::textDim);
-            p.drawText(gr, Qt::AlignCenter, inds[i].g);
+        for (int c = 0; c < shownChannels(); c++) {
+            int x = rowNumW_ + c * chnW_ + 2;
+            int w = chnW_ - 6;
+            int x0 = x + w - indW;
+
+            const unsigned char *regs = (c < 3) ? sidreg : sidreg2;
+            int v = c % 3;
+            unsigned char ctrl = regs[v * 7 + 4];
+            unsigned char filt = regs[0x17];
+            bool tri  = (ctrl >> 4) & 1;
+            bool saw  = (ctrl >> 5) & 1;
+            bool pul  = (ctrl >> 6) & 1;
+            bool noi  = (ctrl >> 7) & 1;
+            bool sync = (ctrl >> 1) & 1;
+            bool ring = (ctrl >> 2) & 1;
+            bool filtOn = (filt >> v) & 1;
+
+            struct Cell { const char *g; bool on; QColor lit; };
+            Cell col1[3] = {
+                { "T", tri, QColor(0x6E, 0xC8, 0xFF) },
+                { "S", saw, QColor(0xFF, 0xC4, 0x6E) },
+                { "P", pul, QColor(0x9C, 0xFF, 0x9C) },
+            };
+            Cell col2[4] = {
+                { "N", noi,    QColor(0xC9, 0xA0, 0xFF) },
+                { "y", sync,   QColor(0xFF, 0x9E, 0x9E) },
+                { "r", ring,   QColor(0xFF, 0x9E, 0x9E) },
+                { "F", filtOn, QColor(0xFF, 0xD4, 0x40) },
+            };
+            auto drawCol = [&](int colX, Cell *cells, int n) {
+                int cellH = indH / n;
+                for (int i = 0; i < n; i++) {
+                    QRect cell(colX + 1, i * cellH + 1, indColW - 2, cellH - 2);
+                    QColor bg = cells[i].on ? cells[i].lit : Theme::C::bgAlt;
+                    QColor border = cells[i].on ? cells[i].lit.darker(140)
+                                                : Theme::C::sep;
+                    QColor fg = cells[i].on ? QColor(0x10, 0x14, 0x1A)
+                                            : Theme::C::textDim;
+                    p.fillRect(cell, bg);
+                    p.setPen(border);
+                    p.drawRect(cell);
+                    p.setPen(fg);
+                    p.drawText(cell, Qt::AlignCenter, cells[i].g);
+                }
+            };
+            drawCol(x0,            col1, 3);
+            drawCol(x0 + indColW,  col2, 4);
         }
         p.setFont(font());
     }
@@ -483,7 +515,11 @@ void PatternView::paintEvent(QPaintEvent *) {
     int scopeY = vuStripH_;
     for (int c = 0; c < shownChannels(); c++) {
         int x = rowNumW_ + c * chnW_ + 2;
-        int w = chnW_ - 6;
+        // Reserve the right edge for the SID waveform indicator block
+        // (drawn above) so the scope curve doesn't stretch under it.
+        // When the user hides those indicators, the scope reclaims the
+        // full width.
+        int w = chnW_ - 6 - (sidIndOn_ ? (16 * 2) : 0);
         QRect frame(x, scopeY + 2, w, scopeStripH_ - 4);
         p.fillRect(frame, Theme::C::vuBg);
         p.setPen(Theme::C::sep);
