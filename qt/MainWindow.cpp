@@ -741,6 +741,14 @@ void MainWindow::loadSongFile(const QString &path) {
     epchn = 0;
     eschn = 0;
     for (int c = 0; c < MAX_CHN; c++) espos[c] = 0;
+    // Wipe chn[] so stale pattptr / songptr / pattnum / gate / instr from
+    // the previous song don't bleed into the new one's first play. loadsong
+    // already calls clearsong() internally which resets songorder /
+    // pattern[] / instr[] / tables, but chn[] is playroutine state, not
+    // song state, so loadsong leaves it alone. Sequential imports of
+    // .sid / .mod (each tmp-staged through this path) showed odd
+    // first-play artifacts otherwise.
+    initchannels();
     loadsong();
     // loadsong() set song_channels from the file (3 = mono, 6 = stereo/dual
     // SID). Mirror that into the runtime stereo state and (re)build SID2 to
