@@ -501,25 +501,50 @@ void PatternView::paintEvent(QPaintEvent *) {
     const int rows = (viewport()->height() - topOffset) / rowHeight;
     const bool playing = isplaying() != 0;
 
+    // Follow-play centre lock: when followplay && playing, the active
+    // channel's current row is pinned to the vertical centre of the
+    // viewport. EVERY channel's column scrolls independently so its own
+    // chn[c].pattptr/4 lands at that same centre line — channels with
+    // shorter patterns or independent loops still show their own playhead
+    // and the rows around it. Row numbers display the active channel's
+    // (wrapped) row.
+    const bool followCenter = followplay && playing;
+    const int  centerR = (rows > 0) ? rows / 2 : 0;
+    const int  refPlay = playRow_[epchn];
+
     for (int r = 0; r < rows; r++) {
-        int row = r + rowOffset;
+        int globalRow = r + rowOffset;
         QRect lineRect(0, topOffset + r * rowHeight, W, rowHeight);
 
-        if (row % 16 == 0)
+        // Reference row used for beat / downbeat tinting + row number text.
+        // Wraps inside the active channel's pattern length while
+        // follow-centred so the band patterns stay consistent across the
+        // viewport even when the song crosses a pattern boundary.
+        int refRow;
+        if (followCenter) {
+            int plen0 = pattlen[epnum[epchn]];
+            int vrow = refPlay + (r - centerR);
+            refRow = (plen0 > 0) ? (((vrow % plen0) + plen0) % plen0) : vrow;
+        } else {
+            refRow = globalRow;
+        }
+
+        if (refRow % 16 == 0)
             p.fillRect(QRect(0, lineRect.y(), rowNumW_ + chnW_ * MAX_CHN, rowHeight),
                        Theme::C::downbeat);
-        else if (row % 4 == 0)
+        else if (refRow % 4 == 0)
             p.fillRect(QRect(0, lineRect.y(), rowNumW_ + chnW_ * MAX_CHN, rowHeight),
                        Theme::C::beat);
 
-        // Edit cursor row
-        if (row == eppos)
+        // Edit cursor row — centre line during follow-centre, eppos otherwise.
+        bool isEditRow = followCenter ? (r == centerR) : (globalRow == eppos);
+        if (isEditRow)
             p.fillRect(lineRect, Theme::C::editRow);
 
         p.setPen(Theme::C::textDim);
         p.drawText(QRect(0, lineRect.y(), rowNumW_, rowHeight),
                    Qt::AlignRight | Qt::AlignVCenter,
-                   QString("%1").arg(row, 3, 16, QLatin1Char('0')).toUpper());
+                   QString("%1").arg(refRow, 3, 16, QLatin1Char('0')).toUpper());
 
         for (int c = 0; c < shownChannels(); c++) {
             int patnum = epnum[c];
@@ -527,25 +552,37 @@ void PatternView::paintEvent(QPaintEvent *) {
             int x = rowNumW_ + c * chnW_;
             QRect cellRect(x, lineRect.y(), chnW_, rowHeight);
 
-            // Selection block overlay
-            if (epmarkchn == c) {
+            // Per-channel virtual row. Follow-centre offsets each channel
+            // by (its playRow - epchn's playRow) so the channel's own
+            // playhead lands at the viewport centre — independent of
+            // pattern lengths or loop alignment between channels.
+            int crow;
+            if (followCenter && plen > 0) {
+                int vrow = playRow_[c] + (r - centerR);
+                crow = ((vrow % plen) + plen) % plen;
+            } else {
+                crow = globalRow;
+            }
+
+            // Selection block overlay (edit-mode only — selections don't
+            // make visual sense when each channel scrolls independently).
+            if (!followCenter && epmarkchn == c) {
                 int lo = qMin(epmarkstart, epmarkend);
                 int hi = qMax(epmarkstart, epmarkend);
-                if (row >= lo && row <= hi) {
+                if (globalRow >= lo && globalRow <= hi) {
                     QColor sel(Theme::C::highlight);
                     sel.setAlpha(40);
                     p.fillRect(cellRect, sel);
                 }
             }
 
-            // Playback row highlight per channel — reads playRow_[c] snap
-            // taken in refresh() so the red row matches the edit cursor
-            // row in follow-play (was off by one because the audio thread
-            // advanced chn[].pattptr between refresh and paint).
-            if (playing) {
-                int prow = playRow_[c];
-                if (prow == row) p.fillRect(cellRect, Theme::C::playRow);
-            }
+            // Playback row highlight per channel. Follow-centre puts every
+            // channel's playhead on the centre line; edit-mode paints per
+            // channel at the global row matching that channel's
+            // chn[c].pattptr / 4.
+            bool isPlayRow = playing && (followCenter ? (r == centerR)
+                                                      : (playRow_[c] == globalRow));
+            if (isPlayRow) p.fillRect(cellRect, Theme::C::playRow);
 
             // Edit-column tint on active channel/row. The white focus
             // border around the active nybble is drawn LATER, after the
@@ -554,7 +591,9 @@ void PatternView::paintEvent(QPaintEvent *) {
             // see which nybble has focus on a coloured cell.
             QRect focusRect;
             bool hasFocusRect = false;
-            if (c == epchn && row == eppos) {
+            bool cursorOnThisRow = followCenter ? (r == centerR)
+                                                 : (globalRow == eppos);
+            if (c == epchn && cursorOnThisRow) {
                 int tx = x + colWidth;
                 QRect colRect;
                 switch (epcolumn) {
@@ -575,12 +614,11 @@ void PatternView::paintEvent(QPaintEvent *) {
                 hasFocusRect = true;
             }
 
-            if (row >= plen) {
-                // The endmark row (row == plen) is the 0xFF ENDPATT byte
-                // in this pattern. Paint it as a bold red 'END  -PATTERN-'
-                // band so the user can spot where the pattern actually
-                // terminates instead of squinting at a sea of '---'.
-                if (row == plen) {
+            // End-of-pattern band — only relevant when displaying the raw
+            // pattern (edit mode). Follow-centre wraps crow inside [0, plen)
+            // so we never need to render an END row.
+            if (!followCenter && crow >= plen) {
+                if (crow == plen) {
                     p.fillRect(cellRect, QColor(80, 25, 25));
                     p.setPen(QPen(QColor(255, 80, 80), 1));
                     p.drawLine(cellRect.left(),  cellRect.top(),
@@ -600,7 +638,7 @@ void PatternView::paintEvent(QPaintEvent *) {
                 continue;
             }
 
-            const unsigned char *cell = &pattern[patnum][row * 4];
+            const unsigned char *cell = &pattern[patnum][crow * 4];
             unsigned char note = cell[0];
             unsigned char ins = cell[1];
             unsigned char cmd = cell[2];
