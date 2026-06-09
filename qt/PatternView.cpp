@@ -86,7 +86,10 @@ PatternView::PatternView(QWidget *parent) : QAbstractScrollArea(parent) {
     colWidth = fm.horizontalAdvance('0');
     rowNumW_ = 6 * colWidth;
     chnW_ = 16 * colWidth;   // widened so header (Ch P L M) fits without overlap
-    vuStripH_ = 14;
+    // 22 px so the SID waveform indicator glyphs (T S P N y r F) painted
+    // at the right edge of the strip have enough vertical room — at the
+    // old 14 px the text was getting clipped by the toolbar above.
+    vuStripH_ = 22;
     scopeStripH_ = 32;
     headerStripH_ = rowHeight + 4;
     setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -464,8 +467,12 @@ void PatternView::paintEvent(QPaintEvent *) {
         QFont gf = p.font();
         gf.setBold(true);
         p.setFont(gf);
+        // Use the full strip height (vuStripH_) for the glyph row so the
+        // text isn't clipped by the toolbar's bottom edge — the VU bar
+        // proper sits inside vuPad-padded space (vuH < vuStripH_) but the
+        // glyphs want the whole strip.
         for (int i = 0; i < indGlyphs; i++) {
-            QRect gr(indX0 + i * indGlyphW, vuPad, indGlyphW, vuH);
+            QRect gr(indX0 + i * indGlyphW, 0, indGlyphW, vuStripH_);
             p.setPen(inds[i].on ? inds[i].lit : Theme::C::textDim);
             p.drawText(gr, Qt::AlignCenter, inds[i].g);
         }
