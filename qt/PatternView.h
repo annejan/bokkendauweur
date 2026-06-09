@@ -57,6 +57,10 @@ private:
     // C side via gcommon.h — 3 for mono, 6 for the stereo build.
     static constexpr int kScopeLen = 64;
     std::array<std::array<unsigned char, kScopeLen>, MAX_CHN> scope_{};
+    // Filter cutoff history per voice. Mirrors scope_ ring buffer; only
+    // captures when the $17 filter-route bit for the voice is set,
+    // otherwise stores 0 so the trace flattens (and we paint nothing).
+    std::array<std::array<unsigned char, kScopeLen>, MAX_CHN> filtScope_{};
     int scopeHead_ = 0;
 
     // Layout constants computed at construction

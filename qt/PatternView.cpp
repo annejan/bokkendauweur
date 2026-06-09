@@ -170,6 +170,26 @@ void PatternView::tickScope() {
     unsigned char levels[MAX_CHN] = {0};
     sid_getlevels(levels);
     for (int c = 0; c < MAX_CHN; c++) scope_[c][scopeHead_] = levels[c];
+    // Capture filter cutoff alongside the envelope so paintEvent can
+    // draw a second yellow trace on top of the scope curve when the
+    // voice is routed through the filter. Cutoff is the 11-bit value
+    // formed from sidreg[$15] low 3 bits + sidreg[$16] << 3; we scale
+    // it into the same 0..255 range the envelope uses. Voices 0..2 read
+    // sidreg, 3..5 read sidreg2. Filter is per-SID (not per-voice), so
+    // the cutoff value is the same across all routed voices of one chip;
+    // the per-channel store lets us key paint on $17 voice-route bits.
+    auto cap = [&](const unsigned char *regs, int c) {
+        int v = c % 3;
+        unsigned char filt = regs[0x17];
+        if ((filt >> v) & 1) {
+            unsigned cutoff = ((unsigned)regs[0x16] << 3) | (regs[0x15] & 7);
+            filtScope_[c][scopeHead_] = (unsigned char)(cutoff >> 3); // 0..255
+        } else {
+            filtScope_[c][scopeHead_] = 0;
+        }
+    };
+    for (int c = 0; c < 3; c++) cap(sidreg, c);
+    for (int c = 3; c < MAX_CHN; c++) cap(sidreg2, c);
     scopeHead_ = (scopeHead_ + 1) % kScopeLen;
     viewport()->update();
 }
@@ -539,6 +559,28 @@ void PatternView::paintEvent(QPaintEvent *) {
         p.setPen(QPen(stroke, 1.5));
         p.setRenderHint(QPainter::Antialiasing, true);
         p.drawPath(path);
+
+        // Filter cutoff trace — same yellow as the [F] indicator box, only
+        // painted across the window where the voice was actually routed
+        // through the filter ($17 voice bit set). Zero-valued samples
+        // (route off) split the trace so the line doesn't span the
+        // un-filtered gap.
+        QPainterPath fpath;
+        bool fopen = false;
+        for (int i = 0; i < n; i++) {
+            int idx = (scopeHead_ + i) % n;
+            unsigned char fv = filtScope_[c][idx];
+            if (fv == 0) { fopen = false; continue; }
+            float v = (float)fv / 255.0f;
+            float fx = frame.x() + 1 + (frame.width() - 2) * (float)i / (n - 1);
+            float fy = frame.bottom() - 1 - v * (frame.height() - 2);
+            if (!fopen) { fpath.moveTo(fx, fy); fopen = true; }
+            else         fpath.lineTo(fx, fy);
+        }
+        if (!fpath.isEmpty()) {
+            p.setPen(QPen(QColor(0xFF, 0xD4, 0x40), 1.5));
+            p.drawPath(fpath);
+        }
         p.setRenderHint(QPainter::Antialiasing, false);
     }
 
