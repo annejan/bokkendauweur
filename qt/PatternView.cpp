@@ -42,6 +42,8 @@ extern int eschn;
 extern int esnum;
 extern int songlen[MAX_SONGS][MAX_CHN];
 extern CHN chn[MAX_CHN];
+extern unsigned char sidreg[];
+extern unsigned char sidreg2[];
 extern int stereo_mode;
 extern int hexnybble;
 extern int autoadvance;
@@ -409,10 +411,25 @@ void PatternView::paintEvent(QPaintEvent *) {
             p.setFont(font());
             continue;
         }
-        int filled = (int)((double)levels[c] / 255.0 * (w - 2));
+        // Waveform / flag indicator block sits at the right edge of the
+        // VU bar. Reads the live SID control register for this voice
+        // (sidreg / sidreg2 for SID1 / SID2) — bits 4..7 are TRI / SAW
+        // / PUL / NOI, bits 1..2 are SYNC / RING. The $17 filter
+        // register's voice-enable bits show as F. Lit glyphs use a hue
+        // per waveform family so the user can tell at a glance which
+        // generators a patch is actually driving each frame.
+        //
+        // Block reserves ~6 glyphs × ~7 px = ~42 px on the right; the
+        // VU fill below tops out at that boundary so the meter never
+        // paints over the glyphs.
+        const int indGlyphs = 7;     // T S P N | S R F
+        const int indGlyphW = 7;
+        const int indW = indGlyphs * indGlyphW;
+        const int meterW = qMax(8, w - indW - 4);
+        int filled = (int)((double)levels[c] / 255.0 * (meterW - 2));
         if (filled > 0) {
-            int seg1 = (int)((w - 2) * 0.6);
-            int seg2 = (int)((w - 2) * 0.9);
+            int seg1 = (int)((meterW - 2) * 0.6);
+            int seg2 = (int)((meterW - 2) * 0.9);
             int rem = filled;
             int xx = x + 1;
             int g = qMin(rem, seg1);
@@ -421,6 +438,38 @@ void PatternView::paintEvent(QPaintEvent *) {
             if (y > 0) { p.fillRect(QRect(xx, vuPad + 1, y, vuH - 2), Theme::C::vuAmber); rem -= y; xx += y; }
             if (rem > 0) p.fillRect(QRect(xx, vuPad + 1, rem, vuH - 2), Theme::C::vuRed);
         }
+        // SID register window. Voices 0..2 -> sidreg, 3..5 -> sidreg2.
+        const unsigned char *regs = (c < 3) ? sidreg : sidreg2;
+        int v = c % 3;
+        unsigned char ctrl = regs[v * 7 + 4];
+        unsigned char filt = regs[0x17];
+        bool tri  = (ctrl >> 4) & 1;
+        bool saw  = (ctrl >> 5) & 1;
+        bool pul  = (ctrl >> 6) & 1;
+        bool noi  = (ctrl >> 7) & 1;
+        bool sync = (ctrl >> 1) & 1;
+        bool ring = (ctrl >> 2) & 1;
+        bool filtOn = (filt >> v) & 1;
+        struct Ind { const char *g; bool on; QColor lit; };
+        Ind inds[] = {
+            { "T", tri,    QColor(0x6E, 0xC8, 0xFF) },
+            { "S", saw,    QColor(0xFF, 0xC4, 0x6E) },
+            { "P", pul,    QColor(0x9C, 0xFF, 0x9C) },
+            { "N", noi,    QColor(0xC9, 0xA0, 0xFF) },
+            { "y", sync,   QColor(0xFF, 0x9E, 0x9E) },
+            { "r", ring,   QColor(0xFF, 0x9E, 0x9E) },
+            { "F", filtOn, QColor(0xFF, 0xD4, 0x40) },
+        };
+        int indX0 = x + w - indW;
+        QFont gf = p.font();
+        gf.setBold(true);
+        p.setFont(gf);
+        for (int i = 0; i < indGlyphs; i++) {
+            QRect gr(indX0 + i * indGlyphW, vuPad, indGlyphW, vuH);
+            p.setPen(inds[i].on ? inds[i].lit : Theme::C::textDim);
+            p.drawText(gr, Qt::AlignCenter, inds[i].g);
+        }
+        p.setFont(font());
     }
 
     // ---- Mini scope strip -----------------------------------------------
