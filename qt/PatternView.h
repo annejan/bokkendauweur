@@ -24,6 +24,17 @@ public slots:
     // Per-voice SID waveform / flag indicator block in the vu+scope strip.
     void setSidIndicatorsEnabled(bool on) { sidIndOn_ = on; viewport()->update(); }
     bool sidIndicatorsEnabled() const     { return sidIndOn_; }
+    // Beat tinting: rowsPerBeat lights the lighter "beat" band every N
+    // rows, and rowsPerBeat * beatsPerBar lights the darker "downbeat"
+    // band every M rows. Default 4 / 4 -> beat every 4 rows, downbeat
+    // every 16 rows (4/4 in 16-th-note tracker grid).
+    void setBeatGrid(int rowsPerBeat, int beatsPerBar) {
+        beatRows_ = qMax(1, rowsPerBeat);
+        barBeats_ = qMax(1, beatsPerBar);
+        viewport()->update();
+    }
+    int rowsPerBeat() const { return beatRows_; }
+    int beatsPerBar() const { return barBeats_; }
 
 signals:
     void patternEdited();
@@ -59,6 +70,8 @@ private:
     bool instrColorsOn_ = false;
     bool noteColorsOn_ = false;
     bool sidIndOn_ = true;
+    int  beatRows_ = 4;
+    int  barBeats_ = 4;
     int lastEppos_ = -1;
     int lastEpchn_ = -1;
     // chn[c].pattptr snapshot taken at the start of refresh() and reused

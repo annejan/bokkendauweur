@@ -621,10 +621,11 @@ void PatternView::paintEvent(QPaintEvent *) {
             refRow = globalRow;
         }
 
-        if (refRow % 16 == 0)
+        const int barRows = beatRows_ * barBeats_;
+        if (refRow % barRows == 0)
             p.fillRect(QRect(0, lineRect.y(), rowNumW_ + chnW_ * MAX_CHN, rowHeight),
                        Theme::C::downbeat);
-        else if (refRow % 4 == 0)
+        else if (refRow % beatRows_ == 0)
             p.fillRect(QRect(0, lineRect.y(), rowNumW_ + chnW_ * MAX_CHN, rowHeight),
                        Theme::C::beat);
 

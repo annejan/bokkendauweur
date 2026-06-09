@@ -507,6 +507,47 @@ void MainWindow::buildUi() {
         QSettings s; s.setValue("editor/sidIndicators", on);
     });
 
+    // ---- Beat tinting submenu ------------------------------------------
+    // 'Every 4th row' beat band + 'every 16th row' downbeat band are nice
+    // for 4/4 in a 16-th-note grid, but punk-up a waltz (3/4) or a 6/8
+    // shuffle and the tint lands on the wrong row. Let the user pick the
+    // rows-per-beat + beats-per-bar combination from a single submenu.
+    auto *beatMenu = viewMenu->addMenu("&Beat tinting");
+    auto applyBeatGrid = [this](int rpb, int bpb) {
+        pattern_->setBeatGrid(rpb, bpb);
+        QSettings s;
+        s.setValue("editor/beatRows", rpb);
+        s.setValue("editor/barBeats", bpb);
+    };
+    {
+        QSettings s;
+        int rpb = s.value("editor/beatRows", 4).toInt();
+        int bpb = s.value("editor/barBeats", 4).toInt();
+        pattern_->setBeatGrid(rpb, bpb);
+    }
+    struct BeatPreset { const char *label; int rpb; int bpb; };
+    static const BeatPreset presets[] = {
+        { "4/4 — 4 rows / beat, 4 beats / bar (default)", 4, 4 },
+        { "4/4 — 8 rows / beat, 4 beats / bar (32-row bar)", 8, 4 },
+        { "3/4 — 4 rows / beat, 3 beats / bar (waltz)", 4, 3 },
+        { "6/8 — 3 rows / beat, 6 beats / bar (shuffle)", 3, 6 },
+        { "2/4 — 4 rows / beat, 2 beats / bar (polka)", 4, 2 },
+        { "5/4 — 4 rows / beat, 5 beats / bar", 4, 5 },
+        { "7/8 — 2 rows / beat, 7 beats / bar", 2, 7 },
+    };
+    auto *beatGroup = new QActionGroup(this);
+    for (const auto &p : presets) {
+        auto *a = beatMenu->addAction(p.label);
+        a->setCheckable(true);
+        a->setActionGroup(beatGroup);
+        int rpb = p.rpb, bpb = p.bpb;
+        if (rpb == pattern_->rowsPerBeat() && bpb == pattern_->beatsPerBar())
+            a->setChecked(true);
+        connect(a, &QAction::triggered, this, [applyBeatGrid, rpb, bpb]() {
+            applyBeatGrid(rpb, bpb);
+        });
+    }
+
     // ---- Settings menu (microtonal / tuning / keypreset) ---------------
     auto *settingsMenu = menuBar()->addMenu("&Settings");
 
