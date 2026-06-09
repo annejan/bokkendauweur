@@ -736,11 +736,17 @@ void MainWindow::loadSongFile(const QString &path) {
     // Reset editor cursors so the views point at row 0 of pattern 0 — any
     // stale eppos from a previously edited song would land past the end of
     // the new song's patterns and the grid would look empty.
+    // clearsong() (called by loadsong) also zeroes eseditpos / esnum and
+    // sets einum=1, so the orderlist + instrument cursors snap to the
+    // start of the new song automatically.
     eppos = 0;
     epcolumn = 0;
     epchn = 0;
     eschn = 0;
     for (int c = 0; c < MAX_CHN; c++) espos[c] = 0;
+    epoctave = 4;          // default play octave — middle of the C64 range
+    // PatternView::refresh() will yank the vertical scrollbar back to 0
+    // on the next refreshAll() call because (eppos < rowOffset) → setValue(eppos).
     // Wipe chn[] so stale pattptr / songptr / pattnum / gate / instr from
     // the previous song don't bleed into the new one's first play. loadsong
     // already calls clearsong() internally which resets songorder /
