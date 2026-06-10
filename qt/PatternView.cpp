@@ -303,6 +303,16 @@ void PatternView::keyPressEvent(QKeyEvent *e) {
     QByteArray before;
     if (!isNav) before = captureSongSnapshot();
     setGoatKeys(e);
+    // Alternative keyboard layouts (Dvorak, AZERTY, Colemak, ...) shuffle
+    // the QWERTY note row, so e->key() lands on the wrong SDL keysym and
+    // notekeytbl[] picks up the wrong note. Override rawkey from the
+    // physical scancode when the scan code corresponds to a known QWERTY
+    // note position. key / shiftpressed stay derived from the logical
+    // key so hex-digit entry still tracks the user's layout.
+    if (physicalKeyLayout_) {
+        int qwertySDL = qwertyScancodeToNoteSDL((int)e->nativeScanCode());
+        if (qwertySDL != 0) rawkey = qwertySDL;
+    }
     converthex();
     int preCol = epcolumn;
     int prePos = eppos;

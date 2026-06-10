@@ -644,6 +644,27 @@ void MainWindow::buildUi() {
     addKey("Janko / isomorphic",   &MainWindow::setKeyPresetJanko,   keypreset == KEY_JANKO);
 
     settingsMenu->addSeparator();
+    auto *physA = settingsMenu->addAction("Use &physical (scancode) note layout");
+    physA->setCheckable(true);
+    physA->setToolTip(
+        "Map the QWERTY note positions (bottom row Z..M + S D G H J sharps; "
+        "top row Q..U + 2 3 5 6 7 sharps) by physical scancode instead of "
+        "logical key. Lets users on Dvorak / AZERTY / Colemak play notes "
+        "from the same physical keys as a QWERTY user. Hex digits and "
+        "navigation keys still use the logical layout so typing hex stays "
+        "natural. Currently Linux-only.");
+    {
+        QSettings s;
+        bool on = s.value("editor/physicalKeyLayout", true).toBool();
+        physA->setChecked(on);
+        pattern_->setPhysicalKeyLayout(on);
+    }
+    connect(physA, &QAction::toggled, this, [this](bool on) {
+        pattern_->setPhysicalKeyLayout(on);
+        QSettings s; s.setValue("editor/physicalKeyLayout", on);
+    });
+
+    settingsMenu->addSeparator();
     auto *audioMenu = settingsMenu->addMenu("&Audio engine");
     auto *stereoA = audioMenu->addAction("Dual-SID / 6-channel mode");
     stereoAction_ = stereoA;

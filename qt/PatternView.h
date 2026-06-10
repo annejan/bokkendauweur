@@ -62,6 +62,15 @@ public slots:
     // shortcuts bound to Ctrl+Shift+Up / Ctrl+Shift+Down.
     void transposeSelection(int semis);
 
+    // When true (default), the pattern editor remaps QWERTY note-position
+    // scan codes onto the SDL keysym table the C-core's notekeytbl[] uses.
+    // Lets users on Dvorak / AZERTY / Colemak / etc. play notes from the
+    // physical key positions instead of whatever symbol their layout has
+    // mapped there. Logical Qt::Key_* is still used for everything else
+    // (hex digits, navigation), so they type hex normally.
+    void setPhysicalKeyLayout(bool on) { physicalKeyLayout_ = on; }
+    bool physicalKeyLayout() const     { return physicalKeyLayout_; }
+
 signals:
     void patternEdited();
 
@@ -125,6 +134,7 @@ private:
     int selChCursor_  = -1;
     bool dragActive_ = false;
     bool insertGrows_ = false;
+    bool physicalKeyLayout_ = true;
     struct SelRect { int chLo, chHi, rowLo, rowHi; };
     SelRect normalisedSelection() const;
     int rowAtY(int y) const;

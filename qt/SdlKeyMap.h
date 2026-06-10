@@ -80,3 +80,33 @@ inline void clearGoatKeys() {
     key = 0;
     shiftpressed = 0;
 }
+
+// Map an X11 / xkb keycode (Linux nativeScanCode) for a key in the QWERTY
+// note-input layout (bottom row Z..M + S D G H J sharps, top row Q..U + 2
+// 3 5 6 7 sharps) to the corresponding SDL keysym. Returns 0 if the
+// scancode isn't a known note position. Windows / macOS use different
+// scan-code numbering; only Linux is mapped for now (the user reported
+// the issue on Linux + alternative layout).
+inline int qwertyScancodeToNoteSDL(int scancode) {
+    switch (scancode) {
+    // Bottom row: Z X C V B N M
+    case 52: return SDLK_z; case 53: return SDLK_x; case 54: return SDLK_c;
+    case 55: return SDLK_v; case 56: return SDLK_b; case 57: return SDLK_n;
+    case 58: return SDLK_m;
+    // Sharps on home row: S D F G H J K L
+    case 39: return SDLK_s; case 40: return SDLK_d; case 41: return SDLK_f;
+    case 42: return SDLK_g; case 43: return SDLK_h; case 44: return SDLK_j;
+    case 45: return SDLK_k; case 46: return SDLK_l;
+    // Top row: Q W E R T Y U I O P
+    case 24: return SDLK_q; case 25: return SDLK_w; case 26: return SDLK_e;
+    case 27: return SDLK_r; case 28: return SDLK_t; case 29: return SDLK_y;
+    case 30: return SDLK_u; case 31: return SDLK_i; case 32: return SDLK_o;
+    case 33: return SDLK_p;
+    // Number row sharps: 1 2 3 4 5 6 7 8 9 0
+    case 10: return SDLK_1; case 11: return SDLK_2; case 12: return SDLK_3;
+    case 13: return SDLK_4; case 14: return SDLK_5; case 15: return SDLK_6;
+    case 16: return SDLK_7; case 17: return SDLK_8; case 18: return SDLK_9;
+    case 19: return SDLK_0;
+    default: return 0;
+    }
+}
