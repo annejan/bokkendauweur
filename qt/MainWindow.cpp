@@ -402,6 +402,11 @@ void MainWindow::buildUi() {
 
     // ---- Menus -----------------------------------------------------------
     auto *fileMenu = menuBar()->addMenu("&File");
+    auto *newA = fileMenu->addAction("&New");
+    newA->setShortcut(Qt::CTRL | Qt::Key_N);
+    newA->setToolTip("Discard the current song and start a fresh empty project "
+                     "(64-row patterns, REST endmarks, default tempo).");
+    connect(newA, &QAction::triggered, this, &MainWindow::newSong);
     auto *openA = fileMenu->addAction("&Open .sng…");
     openA->setShortcut(Qt::CTRL | Qt::Key_O);
     connect(openA, &QAction::triggered, this, &MainWindow::openSong);
@@ -903,6 +908,42 @@ void MainWindow::loadSongFile(const QString &path) {
     refreshAll();
     if (auto *w = activeEditorWidget()) w->update();
     statusStrip_->showMessage(QString("Loaded: %1").arg(path));
+}
+
+void MainWindow::newSong() {
+    // Treat 'undo history present' as 'might have unsaved edits' so the
+    // user doesn't lose work by accident. The undo stack also tracks
+    // post-load edits (loadSongFile clears it), so this is a tight
+    // enough heuristic without bolting a separate dirty flag onto the
+    // C core.
+    if (undoStack_->canUndo()) {
+        QMessageBox::StandardButton choice = QMessageBox::question(this,
+            "Start a new song?",
+            "The current song has unsaved edits. Discard them and start "
+            "a fresh empty project?",
+            QMessageBox::Discard | QMessageBox::Cancel,
+            QMessageBox::Cancel);
+        if (choice != QMessageBox::Discard) return;
+    }
+
+    {
+        AudioFence fence;
+        clearsong(1, 1, 1, 1, 1);
+        initchannels();
+        countpatternlengths();
+        eppos = 0;
+        epcolumn = 0;
+        epchn = 0;
+        eschn = 0;
+        for (int c = 0; c < MAX_CHN; c++) espos[c] = 0;
+        epoctave = 4;
+        // Forget the previous file: Save behaves as Save-As next time.
+        songfilename[0] = 0;
+        setWindowTitle(titleForSong(""));
+    }
+    undoStack_->clear();
+    refreshAll();
+    statusStrip_->showMessage("New song");
 }
 
 void MainWindow::openSong() {

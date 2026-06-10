@@ -51,6 +51,7 @@ public:
     QWidget *activeEditorWidget() const;
 
 private slots:
+    void newSong();
     void openSong();
     void mergeSong();
     void saveSong();
