@@ -83,6 +83,7 @@ set(BME_SRC
 set(QT_SRC
     main.cpp
     MainWindow.cpp
+    CheatSheet.cpp
     PatternView.cpp
     OrderView.cpp
     InstrumentView.cpp

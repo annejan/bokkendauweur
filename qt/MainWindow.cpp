@@ -1,4 +1,9 @@
 #include "MainWindow.h"
+#include "CheatSheet.h"
+#include <QTextBrowser>
+#include <QDialog>
+#include <QPointer>
+#include <QPushButton>
 #include "PatternView.h"
 #include "OrderView.h"
 #include "InstrumentView.h"
@@ -738,6 +743,13 @@ void MainWindow::buildUi() {
     connect(sidA, &QAction::triggered, this, &MainWindow::toggleSidModel);
 
     auto *helpMenu = menuBar()->addMenu("&Help");
+    auto *cheatA = helpMenu->addAction("&Command chart…");
+    cheatA->setShortcut(Qt::Key_F12);
+    cheatA->setToolTip("Reference card for track effects, wavetable / pulse / "
+                       "filter commands, chord spellings + the Qt frontend's "
+                       "keyboard shortcuts.");
+    connect(cheatA, &QAction::triggered, this, &MainWindow::showCheatSheet);
+    helpMenu->addSeparator();
     auto *aboutA = helpMenu->addAction("&About GoatTracker Qt…");
     connect(aboutA, &QAction::triggered, this, &MainWindow::showAbout);
     auto *aboutQtA = helpMenu->addAction("About &Qt…");
@@ -1053,6 +1065,34 @@ bool MainWindow::chiptunesakAvailable() {
           chiptunesakCached_ ? "AVAILABLE" : "absent",
           proc.exitCode());
     return chiptunesakCached_ != 0;
+}
+
+void MainWindow::showCheatSheet() {
+    // Reuse one dialog across F12 presses — opening / closing doesn't
+    // tear down the QTextBrowser content. Parented to MainWindow so it
+    // closes when the editor quits.
+    static QPointer<QDialog> dlg;
+    if (dlg) {
+        dlg->raise();
+        dlg->activateWindow();
+        return;
+    }
+    dlg = new QDialog(this);
+    dlg->setWindowTitle("GoatTracker Qt — command chart");
+    dlg->resize(1100, 800);
+    auto *lay = new QVBoxLayout(dlg);
+    lay->setContentsMargins(8, 8, 8, 8);
+    auto *tb = new QTextBrowser(dlg);
+    tb->setOpenExternalLinks(true);
+    tb->setHtml(cheatSheetHtml());
+    lay->addWidget(tb);
+    auto *closeBtn = new QPushButton("Close", dlg);
+    connect(closeBtn, &QPushButton::clicked, dlg, &QDialog::accept);
+    auto *bottom = new QHBoxLayout();
+    bottom->addStretch();
+    bottom->addWidget(closeBtn);
+    lay->addLayout(bottom);
+    dlg->show();
 }
 
 void MainWindow::showAbout() {
