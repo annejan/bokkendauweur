@@ -558,10 +558,17 @@ InstrumentView::InstrumentView(QWidget *parent) : QWidget(parent) {
                         "on the current channel.");
     auto *stopBtn = new QPushButton("Silence", this);
     stopBtn->setToolTip("Release the test note on the current channel.");
-    auto *autoBtn = new QPushButton("Auto-test", this);
-    autoBtn->setCheckable(true);
-    autoBtn->setToolTip("Retrigger the test note every second so any edit to "
+    autoBtn_ = new QPushButton("Auto-test", this);
+    autoBtn_->setCheckable(true);
+    autoBtn_->setToolTip("Retrigger the test note every second so any edit to "
                         "ADSR / wave / pulse / filter is audible instantly.");
+    // Lit-pill stylesheet when the toggle is on — same red-glow family
+    // the transport Stop button uses so 'this is actively making sound'
+    // reads at a glance. Auto-test stops on view-change (hideEvent).
+    autoBtn_->setStyleSheet(
+        "QPushButton:checked { background:#E5484D; color:#FFFFFF; "
+        "border:2px solid #FFB3B5; font-weight:bold; }"
+        "QPushButton:checked:hover { background:#FF6A6F; }");
     applyBtn_ = new QPushButton("Apply", this);
     applyBtn_->setToolTip("Commit the current edits as the new revert baseline. "
                           "After Apply, the Reset button will roll back to "
@@ -582,7 +589,7 @@ InstrumentView::InstrumentView(QWidget *parent) : QWidget(parent) {
     autoTestTimer_ = new QTimer(this);
     autoTestTimer_->setInterval(1000);
     connect(autoTestTimer_, &QTimer::timeout, this, &InstrumentView::onTestNote);
-    connect(autoBtn, &QPushButton::toggled, this, [this](bool on) {
+    connect(autoBtn_, &QPushButton::toggled, this, [this](bool on) {
         if (on) {
             onTestNote();
             autoTestTimer_->start();
@@ -593,7 +600,7 @@ InstrumentView::InstrumentView(QWidget *parent) : QWidget(parent) {
     });
     btnRow->addWidget(testBtn);
     btnRow->addWidget(stopBtn);
-    btnRow->addWidget(autoBtn);
+    btnRow->addWidget(autoBtn_);
     btnRow->addSpacing(20);
     btnRow->addWidget(applyBtn_);
     btnRow->addWidget(resetBtn_);
@@ -724,6 +731,13 @@ void InstrumentView::showEvent(QShowEvent *e) {
 }
 
 void InstrumentView::hideEvent(QHideEvent *e) {
+    // Untoggle Auto-test when the view becomes hidden — the user
+    // switching to Tables / Order / Pattern editor expects the
+    // retriggered test note to stop. Firing the existing toggle
+    // slot stops the timer + releases the active note.
+    if (autoBtn_ && autoBtn_->isChecked()) {
+        autoBtn_->setChecked(false);
+    }
     QWidget::hideEvent(e);
     if (playbackTimer_) playbackTimer_->stop();
 }

@@ -48,6 +48,7 @@ private:
     QSpinBox *wave_, *pulse_, *filter_, *vibParam_;
     QSpinBox *vibDelay_, *gateTimer_, *firstWave_;
     class QTimer *autoTestTimer_ = nullptr;
+    class QPushButton *autoBtn_ = nullptr;
     class QTimer *playbackTimer_ = nullptr; // 33 Hz monitor for live previews
     AdsrPreview *adsr_;
     WavetablePreview *wavePrev_;
