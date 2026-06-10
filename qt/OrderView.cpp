@@ -269,16 +269,16 @@ OrderView::OrderView(QWidget *parent) : QWidget(parent) {
     table_->setShowGrid(false);
     table_->setSelectionBehavior(QAbstractItemView::SelectItems);
     table_->setSelectionMode(QAbstractItemView::SingleSelection);
-    // Only DoubleClicked + F2/Enter enter edit mode. The user reported that
-    // the first hex digit committed the cell before the second nybble could
-    // be typed — that's the AnyKeyPressed default flow: the digit both opens
-    // the editor and is dispatched to the model, which accepts '4' as valid
-    // hex 0x4, fires dataChanged, and the editor closes again. With this
-    // trigger set, single-clicks just move the selection; double-click (or
-    // F2 / Enter on the focused cell) opens the QLineEdit editor and it
-    // stays open until Return / Escape.
+    // AnyKeyPressed so typing on a selected cell opens the editor at the
+    // first hex digit — the custom QLineEdit delegate has max-length 2 so
+    // the second nybble fits before commit. The original concern (a
+    // single digit committing too early) was fixed by the bounded editor,
+    // not by the trigger; re-enabling AnyKeyPressed matches the SDL
+    // build's behaviour of just typing the pattern number on a cell.
     table_->setEditTriggers(QAbstractItemView::DoubleClicked
-                            | QAbstractItemView::EditKeyPressed);
+                            | QAbstractItemView::EditKeyPressed
+                            | QAbstractItemView::AnyKeyPressed
+                            | QAbstractItemView::SelectedClicked);
     table_->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     table_->verticalHeader()->setDefaultSectionSize(20);
     table_->setAlternatingRowColors(false);
