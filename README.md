@@ -194,6 +194,20 @@ order position, speed multiplier, octave, current instrument, SID chip
 model (clickable to toggle 6581 ↔ 8580), PAL/NTSC (clickable),
 follow-play state.
 
+## Note-entry keyboard
+
+The pattern editor maps the host keyboard onto two chromatic octaves
+(Protracker layout, used by the original GoatTracker SDL build). The
+lower keyboard row (`Z`..`M` plus black-key sharps on `S` `D` `G` `H`
+`J`) plays the current edit octave; the upper row (`Q`..`U` plus sharps
+on `2` `3` `5` `6` `7`) plays the octave above. Numpad `+` / `−` shifts
+the base octave; the status strip shows it as `Oct N`.
+
+![Pattern-editor note keys laid out on a two-octave piano: lower row Z..M + S D G H J on octave N, upper row Q..U + 2 3 5 6 7 on octave N+1](assets/keymap.svg)
+
+Alternate layouts (DMC and Janko) live under **Settings → Note entry
+layout**.
+
 ## Key data formats
 
 `.sng` file layout (see also `docs/quickstart.md`):

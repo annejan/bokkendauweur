@@ -1,0 +1,122 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 260" font-family="Helvetica,Arial,sans-serif">
+  <!-- Background -->
+  <rect width="720" height="260" fill="#1B202B"/>
+
+  <!-- Title -->
+  <text x="360" y="22" fill="#E1E5EA" font-size="14" font-weight="bold"
+        text-anchor="middle">GoatTracker Qt — pattern-editor note keys (Protracker layout)</text>
+
+  <!-- Octave labels -->
+  <text x="178" y="42" fill="#9CDDF5" font-size="12" font-weight="bold"
+        text-anchor="middle">Lower row · Octave N</text>
+  <text x="528" y="42" fill="#FFC46E" font-size="12" font-weight="bold"
+        text-anchor="middle">Upper row · Octave N+1</text>
+
+  <!-- ============== White keys (14, 50 px wide, 180 px tall) ============= -->
+  <g stroke="#1B202B" stroke-width="1.2">
+    <!-- Lower octave: Z X C V B N M -->
+    <rect x="10"  y="50" width="50" height="180" rx="3" fill="#F4F6F9"/>
+    <rect x="60"  y="50" width="50" height="180" rx="3" fill="#F4F6F9"/>
+    <rect x="110" y="50" width="50" height="180" rx="3" fill="#F4F6F9"/>
+    <rect x="160" y="50" width="50" height="180" rx="3" fill="#F4F6F9"/>
+    <rect x="210" y="50" width="50" height="180" rx="3" fill="#F4F6F9"/>
+    <rect x="260" y="50" width="50" height="180" rx="3" fill="#F4F6F9"/>
+    <rect x="310" y="50" width="50" height="180" rx="3" fill="#F4F6F9"/>
+
+    <!-- Upper octave: Q W E R T Y U -->
+    <rect x="360" y="50" width="50" height="180" rx="3" fill="#F4F6F9"/>
+    <rect x="410" y="50" width="50" height="180" rx="3" fill="#F4F6F9"/>
+    <rect x="460" y="50" width="50" height="180" rx="3" fill="#F4F6F9"/>
+    <rect x="510" y="50" width="50" height="180" rx="3" fill="#F4F6F9"/>
+    <rect x="560" y="50" width="50" height="180" rx="3" fill="#F4F6F9"/>
+    <rect x="610" y="50" width="50" height="180" rx="3" fill="#F4F6F9"/>
+    <rect x="660" y="50" width="50" height="180" rx="3" fill="#F4F6F9"/>
+  </g>
+
+  <!-- White-key labels (key letter big, note small) -->
+  <g font-weight="bold" text-anchor="middle">
+    <!-- Lower octave keys -->
+    <text x="35"  y="200" fill="#1A1A1A" font-size="24">Z</text>
+    <text x="35"  y="222" fill="#6E6E6E" font-size="11">C</text>
+    <text x="85"  y="200" fill="#1A1A1A" font-size="24">X</text>
+    <text x="85"  y="222" fill="#6E6E6E" font-size="11">D</text>
+    <text x="135" y="200" fill="#1A1A1A" font-size="24">C</text>
+    <text x="135" y="222" fill="#6E6E6E" font-size="11">E</text>
+    <text x="185" y="200" fill="#1A1A1A" font-size="24">V</text>
+    <text x="185" y="222" fill="#6E6E6E" font-size="11">F</text>
+    <text x="235" y="200" fill="#1A1A1A" font-size="24">B</text>
+    <text x="235" y="222" fill="#6E6E6E" font-size="11">G</text>
+    <text x="285" y="200" fill="#1A1A1A" font-size="24">N</text>
+    <text x="285" y="222" fill="#6E6E6E" font-size="11">A</text>
+    <text x="335" y="200" fill="#1A1A1A" font-size="24">M</text>
+    <text x="335" y="222" fill="#6E6E6E" font-size="11">B</text>
+
+    <!-- Upper octave keys -->
+    <text x="385" y="200" fill="#1A1A1A" font-size="24">Q</text>
+    <text x="385" y="222" fill="#6E6E6E" font-size="11">C</text>
+    <text x="435" y="200" fill="#1A1A1A" font-size="24">W</text>
+    <text x="435" y="222" fill="#6E6E6E" font-size="11">D</text>
+    <text x="485" y="200" fill="#1A1A1A" font-size="24">E</text>
+    <text x="485" y="222" fill="#6E6E6E" font-size="11">E</text>
+    <text x="535" y="200" fill="#1A1A1A" font-size="24">R</text>
+    <text x="535" y="222" fill="#6E6E6E" font-size="11">F</text>
+    <text x="585" y="200" fill="#1A1A1A" font-size="24">T</text>
+    <text x="585" y="222" fill="#6E6E6E" font-size="11">G</text>
+    <text x="635" y="200" fill="#1A1A1A" font-size="24">Y</text>
+    <text x="635" y="222" fill="#6E6E6E" font-size="11">A</text>
+    <text x="685" y="200" fill="#1A1A1A" font-size="24">U</text>
+    <text x="685" y="222" fill="#6E6E6E" font-size="11">B</text>
+  </g>
+
+  <!-- ============== Black keys (10, 30 px wide, 115 px tall) ============= -->
+  <g stroke="#0A0E13" stroke-width="1.2">
+    <!-- Lower octave: S D - G H J - -->
+    <rect x="45"  y="50" width="30" height="115" rx="2" fill="#22262C"/>
+    <rect x="95"  y="50" width="30" height="115" rx="2" fill="#22262C"/>
+    <rect x="195" y="50" width="30" height="115" rx="2" fill="#22262C"/>
+    <rect x="245" y="50" width="30" height="115" rx="2" fill="#22262C"/>
+    <rect x="295" y="50" width="30" height="115" rx="2" fill="#22262C"/>
+
+    <!-- Upper octave: 2 3 - 5 6 7 - -->
+    <rect x="395" y="50" width="30" height="115" rx="2" fill="#22262C"/>
+    <rect x="445" y="50" width="30" height="115" rx="2" fill="#22262C"/>
+    <rect x="545" y="50" width="30" height="115" rx="2" fill="#22262C"/>
+    <rect x="595" y="50" width="30" height="115" rx="2" fill="#22262C"/>
+    <rect x="645" y="50" width="30" height="115" rx="2" fill="#22262C"/>
+  </g>
+
+  <!-- Black-key labels (key letter big, note small) -->
+  <g font-weight="bold" text-anchor="middle">
+    <!-- Lower octave sharps -->
+    <text x="60"  y="135" fill="#F4F6F9" font-size="16">S</text>
+    <text x="60"  y="155" fill="#9CA3AF" font-size="9">C#</text>
+    <text x="110" y="135" fill="#F4F6F9" font-size="16">D</text>
+    <text x="110" y="155" fill="#9CA3AF" font-size="9">D#</text>
+    <text x="210" y="135" fill="#F4F6F9" font-size="16">G</text>
+    <text x="210" y="155" fill="#9CA3AF" font-size="9">F#</text>
+    <text x="260" y="135" fill="#F4F6F9" font-size="16">H</text>
+    <text x="260" y="155" fill="#9CA3AF" font-size="9">G#</text>
+    <text x="310" y="135" fill="#F4F6F9" font-size="16">J</text>
+    <text x="310" y="155" fill="#9CA3AF" font-size="9">A#</text>
+
+    <!-- Upper octave sharps -->
+    <text x="410" y="135" fill="#F4F6F9" font-size="16">2</text>
+    <text x="410" y="155" fill="#9CA3AF" font-size="9">C#</text>
+    <text x="460" y="135" fill="#F4F6F9" font-size="16">3</text>
+    <text x="460" y="155" fill="#9CA3AF" font-size="9">D#</text>
+    <text x="560" y="135" fill="#F4F6F9" font-size="16">5</text>
+    <text x="560" y="155" fill="#9CA3AF" font-size="9">F#</text>
+    <text x="610" y="135" fill="#F4F6F9" font-size="16">6</text>
+    <text x="610" y="155" fill="#9CA3AF" font-size="9">G#</text>
+    <text x="660" y="135" fill="#F4F6F9" font-size="16">7</text>
+    <text x="660" y="155" fill="#9CA3AF" font-size="9">A#</text>
+  </g>
+
+  <!-- Footer hint -->
+  <text x="360" y="252" fill="#B0BCC8" font-size="11" text-anchor="middle">
+    N = current edit octave (Numpad <tspan font-weight="bold">+</tspan> /
+    <tspan font-weight="bold">−</tspan> shifts; status bar shows it as
+    <tspan font-weight="bold">Oct N</tspan>). Caps-Lock + key replays the
+    last instrument's first wave on the active channel without writing the row.
+  </text>
+</svg>
