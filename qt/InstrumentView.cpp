@@ -921,7 +921,17 @@ void InstrumentView::readFromGlobals() {
     char buf[MAX_INSTRNAMELEN + 1];
     std::memcpy(buf, ins.name, MAX_INSTRNAMELEN);
     buf[MAX_INSTRNAMELEN] = 0;
-    name_->setText(QString::fromLocal8Bit(buf));
+    QString incoming = QString::fromLocal8Bit(buf);
+    // Don't yank focus / reset the caret on every refresh. The 50 Hz tick
+    // re-reads instr[].name via this function; setText() on a focused
+    // QLineEdit moves the caret to the end and made the user lose every
+    // character they typed mid-word. Skip the write while the user is
+    // actively editing (focus held), and otherwise only write when the
+    // content actually changed so other consumers (preset Apply, song
+    // load) still update the field.
+    if (!name_->hasFocus() && name_->text() != incoming) {
+        name_->setText(incoming);
+    }
     attack_->setValue((ins.ad >> 4) & 0xf);
     decay_->setValue(ins.ad & 0xf);
     sustain_->setValue((ins.sr >> 4) & 0xf);
