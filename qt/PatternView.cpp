@@ -13,6 +13,14 @@
 #include <QLineEdit>
 #include <QToolTip>
 #include <QHelpEvent>
+#include <QApplication>
+#include <QClipboard>
+#include <QMimeData>
+#include <QMenu>
+#include <QContextMenuEvent>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
 #include "SdlKeyMap.h"
 #include "Theme.h"
 #include "UndoStack.h"
@@ -239,8 +247,43 @@ void PatternView::keyPressEvent(QKeyEvent *e) {
     // the instrument editor. We swallow the key before patterncommands() so
     // it can't be picked up as a pattern edit, and skip the snapshot/undo
     // wrap because nothing about the song data changes.
-    if (k == Qt::Key_Backspace) {
+    if (k == Qt::Key_Backspace && !(e->modifiers() & Qt::ControlModifier)) {
         releasenote(epchn);
+        e->accept();
+        return;
+    }
+
+    // Selection + clipboard shortcuts. These take precedence over the
+    // C-core pattern key handler so Ctrl+C / Ctrl+X / Ctrl+V can't be
+    // mistaken for note input.
+    if (e->modifiers() & Qt::ControlModifier) {
+        if (k == Qt::Key_C) { copySelectionToClipboard(false); e->accept(); return; }
+        if (k == Qt::Key_X) { copySelectionToClipboard(true);  e->accept(); return; }
+        if (k == Qt::Key_V) { pasteFromClipboard(false);       e->accept(); return; }
+        if (k == Qt::Key_A) { selectAllInChannel();            e->accept(); return; }
+        if (k == Qt::Key_Delete) {
+            if (hasSelection()) removeSelectedRows();
+            e->accept();
+            return;
+        }
+        if (k == Qt::Key_Backspace) {
+            deleteRowAtCursor();
+            e->accept();
+            return;
+        }
+    }
+    if (k == Qt::Key_Delete && hasSelection()) {
+        clearSelectedCells();
+        e->accept();
+        return;
+    }
+    if (k == Qt::Key_Insert) {
+        insertRowAtCursor();
+        e->accept();
+        return;
+    }
+    if (k == Qt::Key_Escape && hasSelection()) {
+        clearSelection();
         e->accept();
         return;
     }
@@ -290,6 +333,273 @@ int PatternView::channelAtX(int x) const {
     int c = rx / chnW_;
     if (c < 0 || c >= shownChannels()) return -1;
     return c;
+}
+
+int PatternView::rowAtY(int y) const {
+    int gy = y - gridTopOffset();
+    if (gy < 0) return -1;
+    return verticalScrollBar()->value() + gy / rowHeight;
+}
+
+PatternView::SelRect PatternView::normalisedSelection() const {
+    SelRect r;
+    r.chLo  = qMin(selChAnchor_,  selChCursor_);
+    r.chHi  = qMax(selChAnchor_,  selChCursor_);
+    r.rowLo = qMin(selRowAnchor_, selRowCursor_);
+    r.rowHi = qMax(selRowAnchor_, selRowCursor_);
+    return r;
+}
+
+QRect PatternView::cellRect(int chan, int row) const {
+    int rowOffset = verticalScrollBar()->value();
+    int y = gridTopOffset() + (row - rowOffset) * rowHeight;
+    int x = rowNumW_ + chan * chnW_;
+    return QRect(x, y, chnW_, rowHeight);
+}
+
+// MIME type for our binary-precise clipboard payload. Plain text fallback
+// also goes on the clipboard so users can paste pattern selections into a
+// text editor, but pasting back in here prefers the binary form.
+static constexpr const char *kPatternMime = "application/x-goattracker2-pattern";
+
+static QString cellToText(unsigned char note, unsigned char ins,
+                          unsigned char cmd,  unsigned char param) {
+    extern char *notename[];
+    QString n;
+    if (note == REST)            n = "...";
+    else if (note == KEYOFF)     n = "===";
+    else if (note == KEYON)      n = "+++";
+    else if (note >= FIRSTNOTE && note <= LASTNOTE)
+        n = QString::fromLatin1(notename[note - FIRSTNOTE]);
+    else n = "...";
+    QString i = ins ? QString("%1").arg(ins, 2, 16, QLatin1Char('0')).toUpper()
+                    : QString("..");
+    QString c = (cmd || param)
+        ? QString("%1%2").arg(cmd, 1, 16, QLatin1Char('0'))
+                         .arg(param, 2, 16, QLatin1Char('0')).toUpper()
+        : QString("...");
+    return QString("%1 %2 %3").arg(n).arg(i).arg(c);
+}
+
+void PatternView::copySelectionToClipboard(bool cut) {
+    if (!hasSelection()) return;
+    SelRect s = normalisedSelection();
+    int channels = s.chHi - s.chLo + 1;
+    int rows     = s.rowHi - s.rowLo + 1;
+
+    // Binary-ish JSON payload — cells[r][c] = [note, ins, cmd, param].
+    QJsonArray cells;
+    QString textLines;
+    for (int r = 0; r < rows; r++) {
+        QJsonArray rowArr;
+        QStringList textCells;
+        int srcRow = s.rowLo + r;
+        for (int c = 0; c < channels; c++) {
+            int chan = s.chLo + c;
+            int patnum = epnum[chan];
+            QJsonArray cell;
+            if (srcRow >= 0 && srcRow < pattlen[patnum]) {
+                const unsigned char *p = &pattern[patnum][srcRow * 4];
+                cell.append(p[0]); cell.append(p[1]);
+                cell.append(p[2]); cell.append(p[3]);
+                textCells << cellToText(p[0], p[1], p[2], p[3]);
+            } else {
+                cell.append(REST); cell.append(0); cell.append(0); cell.append(0);
+                textCells << "... .. ...";
+            }
+            rowArr.append(cell);
+        }
+        cells.append(rowArr);
+        textLines += textCells.join(" | ") + "\n";
+    }
+    QJsonObject doc;
+    doc["type"]     = "goattracker2-pattern-selection";
+    doc["version"]  = 1;
+    doc["channels"] = channels;
+    doc["rows"]     = rows;
+    doc["cells"]    = cells;
+    QJsonDocument jd(doc);
+
+    auto *mime = new QMimeData();
+    mime->setData(kPatternMime, jd.toJson(QJsonDocument::Compact));
+    mime->setText(QString("# GoatTracker Qt pattern selection %1ch x %2r\n")
+                      .arg(channels).arg(rows) + textLines);
+    QApplication::clipboard()->setMimeData(mime);
+
+    if (cut) clearSelectedCells();
+}
+
+void PatternView::clearSelectedCells() {
+    if (!hasSelection()) return;
+    SelRect s = normalisedSelection();
+    for (int c = s.chLo; c <= s.chHi; c++) {
+        int patnum = epnum[c];
+        for (int r = s.rowLo; r <= s.rowHi; r++) {
+            if (r < 0 || r >= pattlen[patnum]) continue;
+            unsigned char *p = &pattern[patnum][r * 4];
+            p[0] = REST; p[1] = 0; p[2] = 0; p[3] = 0;
+        }
+    }
+    countpatternlengths();
+    refresh();
+    emit patternEdited();
+}
+
+void PatternView::removeSelectedRows() {
+    if (!hasSelection()) return;
+    SelRect s = normalisedSelection();
+    int rowsToRemove = s.rowHi - s.rowLo + 1;
+    for (int c = s.chLo; c <= s.chHi; c++) {
+        int patnum = epnum[c];
+        int plen = pattlen[patnum];
+        // Shift rows [s.rowHi+1 .. plen-1] up by rowsToRemove.
+        for (int r = s.rowLo; r + rowsToRemove < plen; r++) {
+            unsigned char *dst = &pattern[patnum][r * 4];
+            const unsigned char *src = &pattern[patnum][(r + rowsToRemove) * 4];
+            dst[0] = src[0]; dst[1] = src[1]; dst[2] = src[2]; dst[3] = src[3];
+        }
+        // Tail rows become empty.
+        for (int r = plen - rowsToRemove; r < plen; r++) {
+            if (r < 0) continue;
+            unsigned char *p = &pattern[patnum][r * 4];
+            p[0] = REST; p[1] = 0; p[2] = 0; p[3] = 0;
+        }
+    }
+    countpatternlengths();
+    clearSelection();
+    refresh();
+    emit patternEdited();
+}
+
+void PatternView::pasteFromClipboard(bool repeatFill) {
+    const QMimeData *mime = QApplication::clipboard()->mimeData();
+    if (!mime) return;
+    QByteArray raw;
+    if (mime->hasFormat(kPatternMime)) {
+        raw = mime->data(kPatternMime);
+    } else {
+        return;  // text-only paste is lossy; skip for now
+    }
+    QJsonParseError err;
+    QJsonDocument jd = QJsonDocument::fromJson(raw, &err);
+    if (err.error != QJsonParseError::NoError || !jd.isObject()) return;
+    QJsonObject doc = jd.object();
+    if (doc.value("type").toString() != "goattracker2-pattern-selection") return;
+    int srcCh   = doc.value("channels").toInt();
+    int srcRows = doc.value("rows").toInt();
+    QJsonArray cells = doc.value("cells").toArray();
+    if (srcCh <= 0 || srcRows <= 0) return;
+
+    int startRow = eppos;
+    int startCh  = epchn;
+    for (int c = 0; c < srcCh; c++) {
+        int chan = startCh + c;
+        if (chan >= shownChannels()) break;
+        int patnum = epnum[chan];
+        int plen = pattlen[patnum];
+        int targetRows = repeatFill ? qMax(0, plen - startRow) : srcRows;
+        for (int r = 0; r < targetRows; r++) {
+            int dstRow = startRow + r;
+            if (dstRow >= plen) break;
+            int srcRow = r % srcRows;
+            QJsonArray rowArr = cells[srcRow].toArray();
+            if (rowArr.size() <= c) continue;
+            QJsonArray cell = rowArr[c].toArray();
+            if (cell.size() < 4) continue;
+            unsigned char *p = &pattern[patnum][dstRow * 4];
+            p[0] = (unsigned char)cell[0].toInt();
+            p[1] = (unsigned char)cell[1].toInt();
+            p[2] = (unsigned char)cell[2].toInt();
+            p[3] = (unsigned char)cell[3].toInt();
+        }
+    }
+    countpatternlengths();
+    refresh();
+    emit patternEdited();
+}
+
+void PatternView::insertRowAtCursor() {
+    int chan = epchn;
+    int patnum = epnum[chan];
+    int plen = pattlen[patnum];
+    int row = eppos;
+    if (row < 0 || row > plen) return;
+
+    if (insertGrows_) {
+        if (plen >= MAX_PATTROWS) return;
+        // Shift ENDPATT marker down by one; rows [row..plen-1] -> [row+1..plen].
+        for (int r = plen; r > row; r--) {
+            unsigned char *dst = &pattern[patnum][r * 4];
+            const unsigned char *src = &pattern[patnum][(r - 1) * 4];
+            dst[0] = src[0]; dst[1] = src[1]; dst[2] = src[2]; dst[3] = src[3];
+        }
+        // Replant ENDPATT at the new plen.
+        unsigned char *e = &pattern[patnum][(plen + 1) * 4];
+        e[0] = ENDPATT; e[1] = 0; e[2] = 0; e[3] = 0;
+    } else {
+        // Push-off mode: rows [row..plen-2] shift down; row plen-1 dropped.
+        for (int r = plen - 1; r > row; r--) {
+            unsigned char *dst = &pattern[patnum][r * 4];
+            const unsigned char *src = &pattern[patnum][(r - 1) * 4];
+            dst[0] = src[0]; dst[1] = src[1]; dst[2] = src[2]; dst[3] = src[3];
+        }
+    }
+    unsigned char *p = &pattern[patnum][row * 4];
+    p[0] = REST; p[1] = 0; p[2] = 0; p[3] = 0;
+    countpatternlengths();
+    refresh();
+    emit patternEdited();
+}
+
+void PatternView::deleteRowAtCursor() {
+    int chan = epchn;
+    int patnum = epnum[chan];
+    int plen = pattlen[patnum];
+    int row = eppos;
+    if (row < 0 || row >= plen) return;
+
+    if (insertGrows_) {
+        // Symmetric to grow: shrink pattern by 1, drop the cursor row.
+        if (plen <= 1) return;
+        for (int r = row; r < plen - 1; r++) {
+            unsigned char *dst = &pattern[patnum][r * 4];
+            const unsigned char *src = &pattern[patnum][(r + 1) * 4];
+            dst[0] = src[0]; dst[1] = src[1]; dst[2] = src[2]; dst[3] = src[3];
+        }
+        unsigned char *e = &pattern[patnum][(plen - 1) * 4];
+        e[0] = ENDPATT; e[1] = 0; e[2] = 0; e[3] = 0;
+    } else {
+        // Push-up mode: rows [row+1..plen-1] shift up; tail becomes REST.
+        for (int r = row; r < plen - 1; r++) {
+            unsigned char *dst = &pattern[patnum][r * 4];
+            const unsigned char *src = &pattern[patnum][(r + 1) * 4];
+            dst[0] = src[0]; dst[1] = src[1]; dst[2] = src[2]; dst[3] = src[3];
+        }
+        unsigned char *p = &pattern[patnum][(plen - 1) * 4];
+        p[0] = REST; p[1] = 0; p[2] = 0; p[3] = 0;
+    }
+    countpatternlengths();
+    refresh();
+    emit patternEdited();
+}
+
+void PatternView::selectAllInChannel() {
+    int patnum = epnum[epchn];
+    selChAnchor_ = selChCursor_ = epchn;
+    selRowAnchor_ = 0;
+    selRowCursor_ = qMax(0, pattlen[patnum] - 1);
+    viewport()->update();
+}
+
+void PatternView::selectAllRows() {
+    selChAnchor_ = 0;
+    selChCursor_ = shownChannels() - 1;
+    int maxLen = 0;
+    for (int c = 0; c < shownChannels(); c++)
+        if (pattlen[epnum[c]] > maxLen) maxLen = pattlen[epnum[c]];
+    selRowAnchor_ = 0;
+    selRowCursor_ = qMax(0, maxLen - 1);
+    viewport()->update();
 }
 
 void PatternView::mousePressEvent(QMouseEvent *e) {
@@ -367,6 +677,22 @@ void PatternView::mousePressEvent(QMouseEvent *e) {
         }
     }
 
+    // Click in row-number column: select that whole row across all
+    // shown channels. Drag updates the row span across the column.
+    if (e->pos().x() < rowNumW_ && y >= gridTopOffset()) {
+        int row = rowAtY(y);
+        if (row < 0) row = 0;
+        if (row >= MAX_PATTROWS) row = MAX_PATTROWS - 1;
+        eppos = row;
+        selChAnchor_  = 0;
+        selChCursor_  = shownChannels() - 1;
+        selRowAnchor_ = selRowCursor_ = row;
+        dragActive_ = (e->button() == Qt::LeftButton);
+        refresh();
+        emit patternEdited();
+        return;
+    }
+
     // Grid area
     if (y >= gridTopOffset()) {
         int row = verticalScrollBar()->value()
@@ -396,10 +722,104 @@ void PatternView::mousePressEvent(QMouseEvent *e) {
             else if (col <= 8) epcolumn = 3;
             else if (col == 9) epcolumn = 4;
             else               epcolumn = 5;
+
+            // Selection bookkeeping. Shift-click extends an existing
+            // selection's cursor end; plain click starts a fresh anchor
+            // at the current cell and lets mouseMoveEvent grow it.
+            if (e->button() == Qt::LeftButton) {
+                if (e->modifiers() & Qt::ShiftModifier && hasSelection()) {
+                    selChCursor_  = c;
+                    selRowCursor_ = row;
+                } else {
+                    selChAnchor_  = selChCursor_  = c;
+                    selRowAnchor_ = selRowCursor_ = row;
+                }
+                dragActive_ = true;
+            }
         }
         refresh();
         emit patternEdited();
     }
+}
+
+void PatternView::mouseMoveEvent(QMouseEvent *e) {
+    if (!dragActive_) return;
+    if (!(e->buttons() & Qt::LeftButton)) return;
+    int row = rowAtY(e->pos().y());
+    int chan = channelAtX(e->pos().x());
+    // If the cursor leaves the grid sideways or upward, clamp instead of
+    // dropping the drag — the user can still finish the rectangle by
+    // continuing to drag.
+    if (row < 0) row = verticalScrollBar()->value();
+    if (chan < 0) {
+        if (e->pos().x() < rowNumW_) chan = 0;
+        else                          chan = shownChannels() - 1;
+    }
+    if (row >= MAX_PATTROWS) row = MAX_PATTROWS - 1;
+    if (row != selRowCursor_ || chan != selChCursor_) {
+        selRowCursor_ = row;
+        selChCursor_  = chan;
+        viewport()->update();
+    }
+}
+
+void PatternView::mouseReleaseEvent(QMouseEvent *e) {
+    Q_UNUSED(e);
+    dragActive_ = false;
+    // Collapse a zero-area drag back to 'no selection' so a plain click
+    // doesn't leave a spurious 1-cell highlight under the cursor.
+    if (selRowAnchor_ == selRowCursor_ && selChAnchor_ == selChCursor_) {
+        clearSelection();
+    }
+}
+
+void PatternView::contextMenuEvent(QContextMenuEvent *e) {
+    QMenu menu(this);
+    const bool sel = hasSelection();
+    const QMimeData *cm = QApplication::clipboard()->mimeData();
+    const bool clip = cm && cm->hasFormat(kPatternMime);
+
+    auto *copy = menu.addAction("&Copy\tCtrl+C");
+    copy->setEnabled(sel);
+    connect(copy, &QAction::triggered, this, [this]{ copySelectionToClipboard(false); });
+
+    auto *cut = menu.addAction("Cu&t (copy + clear cells)\tCtrl+X");
+    cut->setEnabled(sel);
+    connect(cut, &QAction::triggered, this, [this]{ copySelectionToClipboard(true); });
+
+    auto *paste = menu.addAction("&Paste\tCtrl+V");
+    paste->setEnabled(clip);
+    connect(paste, &QAction::triggered, this, [this]{ pasteFromClipboard(false); });
+
+    auto *pasteRep = menu.addAction("Paste &repeating to end of pattern");
+    pasteRep->setEnabled(clip);
+    connect(pasteRep, &QAction::triggered, this, [this]{ pasteFromClipboard(true); });
+
+    menu.addSeparator();
+
+    auto *clearC = menu.addAction("Clear cells (&keep rows)\tDel");
+    clearC->setEnabled(sel);
+    connect(clearC, &QAction::triggered, this, [this]{ clearSelectedCells(); });
+
+    auto *removeR = menu.addAction("Remove rows (&shift up)\tCtrl+Del");
+    removeR->setEnabled(sel);
+    connect(removeR, &QAction::triggered, this, [this]{ removeSelectedRows(); });
+
+    menu.addSeparator();
+
+    auto *insR = menu.addAction("Insert row at cursor\tIns");
+    connect(insR, &QAction::triggered, this, [this]{ insertRowAtCursor(); });
+    auto *delR = menu.addAction("Delete row at cursor\tCtrl+Backspace");
+    connect(delR, &QAction::triggered, this, [this]{ deleteRowAtCursor(); });
+
+    menu.addSeparator();
+
+    auto *selChan = menu.addAction("Select entire channel\tCtrl+A");
+    connect(selChan, &QAction::triggered, this, [this]{ selectAllInChannel(); });
+    auto *selAll = menu.addAction("Select all channels");
+    connect(selAll, &QAction::triggered, this, [this]{ selectAllRows(); });
+
+    menu.exec(e->globalPos());
 }
 
 void PatternView::paintEvent(QPaintEvent *) {
@@ -708,15 +1128,35 @@ void PatternView::paintEvent(QPaintEvent *) {
                 crow = globalRow;
             }
 
-            // Selection block overlay (edit-mode only — selections don't
-            // make visual sense when each channel scrolls independently).
-            if (!followCenter && epmarkchn == c) {
-                int lo = qMin(epmarkstart, epmarkend);
-                int hi = qMax(epmarkstart, epmarkend);
-                if (globalRow >= lo && globalRow <= hi) {
+            // Rectangular selection overlay (edit-mode only — selections
+            // don't make visual sense when each channel scrolls
+            // independently). Lit semi-transparent fill across the
+            // [chLo..chHi] x [rowLo..rowHi] block; a brighter stroke
+            // outlines the rectangle so the edges of multi-cell
+            // selections stay readable on the row-tinted bands.
+            if (!followCenter && hasSelection()) {
+                SelRect s = normalisedSelection();
+                if (c >= s.chLo && c <= s.chHi
+                    && globalRow >= s.rowLo && globalRow <= s.rowHi) {
                     QColor sel(Theme::C::highlight);
-                    sel.setAlpha(40);
+                    sel.setAlpha(70);
                     p.fillRect(cellRect, sel);
+                    if (globalRow == s.rowLo) {
+                        p.setPen(Theme::C::highlight);
+                        p.drawLine(cellRect.topLeft(), cellRect.topRight());
+                    }
+                    if (globalRow == s.rowHi) {
+                        p.setPen(Theme::C::highlight);
+                        p.drawLine(cellRect.bottomLeft(), cellRect.bottomRight());
+                    }
+                    if (c == s.chLo) {
+                        p.setPen(Theme::C::highlight);
+                        p.drawLine(cellRect.topLeft(), cellRect.bottomLeft());
+                    }
+                    if (c == s.chHi) {
+                        p.setPen(Theme::C::highlight);
+                        p.drawLine(cellRect.topRight(), cellRect.bottomRight());
+                    }
                 }
             }
 

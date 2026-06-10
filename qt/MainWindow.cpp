@@ -507,6 +507,35 @@ void MainWindow::buildUi() {
         QSettings s; s.setValue("editor/sidIndicators", on);
     });
 
+    // ---- Insert row mode submenu --------------------------------------
+    // Pattern editor Insert / Ctrl+Backspace can either grow / shrink the
+    // pattern length by one, or push rows off / pull rows in while keeping
+    // pattlen fixed. The user picks which feels right from a radio group
+    // here; the choice persists via editor/insertGrows.
+    auto *insertMenu = viewMenu->addMenu("&Insert row mode");
+    auto *insertGroup = new QActionGroup(this);
+    auto *insGrow = insertMenu->addAction("Grow / shrink pattern length");
+    insGrow->setCheckable(true);
+    insGrow->setActionGroup(insertGroup);
+    auto *insPush = insertMenu->addAction("Push last row off / pull empty in (fixed length)");
+    insPush->setCheckable(true);
+    insPush->setActionGroup(insertGroup);
+    {
+        QSettings s;
+        bool grows = s.value("editor/insertGrows", false).toBool();
+        pattern_->setInsertGrowsPattern(grows);
+        if (grows) insGrow->setChecked(true);
+        else       insPush->setChecked(true);
+    }
+    connect(insGrow, &QAction::triggered, this, [this]() {
+        pattern_->setInsertGrowsPattern(true);
+        QSettings s; s.setValue("editor/insertGrows", true);
+    });
+    connect(insPush, &QAction::triggered, this, [this]() {
+        pattern_->setInsertGrowsPattern(false);
+        QSettings s; s.setValue("editor/insertGrows", false);
+    });
+
     // ---- Beat tinting submenu ------------------------------------------
     // 'Every 4th row' beat band + 'every 16th row' downbeat band are nice
     // for 4/4 in a 16-th-note grid, but punk-up a waltz (3/4) or a 6/8
