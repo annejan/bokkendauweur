@@ -3,6 +3,7 @@
 #include "SdlKeyMap.h"
 #include "UndoStack.h"
 #include "CoreEvents.h"
+#include "Speech.h"
 
 #include <QHBoxLayout>
 #include <QVBoxLayout>
@@ -212,6 +213,7 @@ public:
 // ---------------------------------------------------------------------------
 
 OrderView::OrderView(QWidget *parent) : QWidget(parent) {
+    setAccessibleName("Order and song editor");
     Theme::applyDarkPalette(this);
 
     auto *root = new QVBoxLayout(this);
@@ -222,6 +224,7 @@ OrderView::OrderView(QWidget *parent) : QWidget(parent) {
     auto *topBar = new QHBoxLayout();
     auto *subLbl = new QLabel("Subtune", this);
     subtuneSpin_ = new QSpinBox(this);
+    subLbl->setBuddy(subtuneSpin_);  // names the spin box for screen readers
     subtuneSpin_->setRange(1, MAX_SONGS);
     subtuneSpin_->setMinimumWidth(60);
     subtuneSpin_->setToolTip("Current subtune (1..32). Each subtune has its own "
@@ -235,6 +238,9 @@ OrderView::OrderView(QWidget *parent) : QWidget(parent) {
     auto addBtn = [&](const QString &label, const char *tip, void (OrderView::*slot)()) {
         auto *b = new QPushButton(label, this);
         b->setToolTip(tip);
+        // Several labels are cryptic glyphs (+1, -1, R, RST, Go, Swap 1↔2); the
+        // tip is a full description, so reuse it as the accessible name.
+        b->setAccessibleName(QString::fromLatin1(tip));
         b->setMinimumWidth(60);
         connect(b, &QPushButton::clicked, this, slot);
         topBar->addWidget(b);
@@ -263,6 +269,7 @@ OrderView::OrderView(QWidget *parent) : QWidget(parent) {
     // --- Main: table + pattern preview side by side ---
     auto *mid = new QHBoxLayout();
     table_ = new QTableView(this);
+    table_->setAccessibleName("Order list");
     model_ = new OrderListModel(this);
     table_->setModel(model_);
     table_->setItemDelegate(new OrderDelegate(table_));
@@ -384,13 +391,37 @@ void OrderView::onSubtuneChanged(int v) {
     if (updating_) return;
     esnum = v - 1;
     refresh();
+    Speech::instance().say(QString("Subtune %1").arg(v), Speech::Priority::Status);
     emit edited();
+}
+
+// Concise self-voicing of the order cell under the cursor: channel, row, and
+// either the pattern number or the special-command name. updatePreview() shows
+// the full visual preview; this is the short spoken form.
+void OrderView::announceCursor() {
+    if (!Speech::instance().enabled()) return;
+    auto idx = table_->currentIndex();
+    if (!idx.isValid()) return;
+    int c = idx.column(), r = idx.row();
+    unsigned char v = songorder[esnum][c][r];
+    QString s = QString("Channel %1, row %2, ").arg(c + 1).arg(r);
+    if (v >= REPEAT) {
+        if (v == LOOPSONG)       s += "RST endmark";
+        else if (v >= TRANSUP)   s += QString("transpose up %1").arg(v - TRANSUP);
+        else if (v >= TRANSDOWN) s += QString("transpose down %1").arg(v - TRANSDOWN);
+        else                     s += QString("repeat %1 times")
+                                          .arg(v - REPEAT == 0 ? 16 : v - REPEAT);
+    } else {
+        s += QString("pattern %1").arg(v, 2, 16, QLatin1Char('0')).toUpper();
+    }
+    Speech::instance().say(s, Speech::Priority::Cursor);
 }
 
 void OrderView::onSelectionChanged() {
     if (updating_) return;
     syncGlobalFromCursor();
     updatePreview();
+    announceCursor();
     emit edited();
 }
 

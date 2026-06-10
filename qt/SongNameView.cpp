@@ -24,6 +24,7 @@ static void writeStr(char *dst, const QString &s) {
 }
 
 SongNameView::SongNameView(QWidget *parent) : QWidget(parent) {
+    setAccessibleName("Song name editor");
     Theme::applyDarkPalette(this);
 
     auto *layout = new QVBoxLayout(this);

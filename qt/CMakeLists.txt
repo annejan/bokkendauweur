@@ -7,6 +7,10 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
+# Optional: self-voicing accessibility (Speech.cpp). Without the module the
+# editor builds and runs unchanged, just silent — all speech code is behind
+# #ifdef GT2_HAVE_TTS.
+find_package(Qt6 QUIET OPTIONAL_COMPONENTS TextToSpeech)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SDL REQUIRED sdl)
 pkg_check_modules(JACK REQUIRED jack)
@@ -93,6 +97,7 @@ set(QT_SRC
     InstrumentQuickList.cpp
     StatusStrip.cpp
     UndoStack.cpp
+    Speech.cpp
     RpcServer.cpp
     PaAudio.cpp
     CoreEvents.cpp
@@ -141,6 +146,12 @@ target_link_libraries(goattrk2-qt PRIVATE
     ${PORTAUDIO_LIB}
     m pthread
 )
+
+# Wire up self-voicing only when the Qt TextToSpeech module is present.
+if(Qt6TextToSpeech_FOUND)
+    target_link_libraries(goattrk2-qt PRIVATE Qt6::TextToSpeech)
+    target_compile_definitions(goattrk2-qt PRIVATE GT2_HAVE_TTS=1)
+endif()
 
 # Stereo support is now a runtime flag (stereo_mode global) inside the single
 # goattrk2-qt binary above. The separate goattrk2-qt-stereo target is gone.

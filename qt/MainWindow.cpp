@@ -14,6 +14,7 @@
 #include "StatusStrip.h"
 #include "UndoStack.h"
 #include "CoreEvents.h"
+#include "Speech.h"
 #include <QUndoStack>
 
 #include <QDockWidget>
@@ -84,6 +85,7 @@ extern int editmode;
 extern int followplay;
 extern int einum;
 extern int epchn;
+extern CHN chn[];
 extern int songinit;
 extern int epoctave;
 extern unsigned char pattern[MAX_PATT][MAX_PATTROWS*4+4];
@@ -194,6 +196,7 @@ void MainWindow::buildUi() {
 
     pbLay->addWidget(new QLabel("Octave", patternBar_));
     auto *octDown = makeStep("−", "Lower recording octave by 1 (key: /)");
+    octDown->setAccessibleName("Lower octave");
     auto *octShow = new QLabel("0", patternBar_);
     octShow->setMinimumWidth(22);
     octShow->setAlignment(Qt::AlignCenter);
@@ -201,6 +204,7 @@ void MainWindow::buildUi() {
     octShow->setFont(obf);
     auto *octUp   = makeStep("+", "Raise recording octave by 1 (key: *). "
                                   "Right-click = lower by 1.");
+    octUp->setAccessibleName("Raise octave");
     octUp->setContextMenuPolicy(Qt::PreventContextMenu);
     pbLay->addWidget(octDown);
     pbLay->addWidget(octShow);
@@ -227,6 +231,7 @@ void MainWindow::buildUi() {
     pbLay->addWidget(new QLabel("Pattern length", patternBar_));
     auto *lenDown = makeStep("−", "Shrink active pattern by 1 row "
                                   "(pulls ENDPATT back one row).");
+    lenDown->setAccessibleName("Shrink pattern");
     auto *lenShow = new QLabel("00", patternBar_);
     lenShow->setMinimumWidth(28);
     lenShow->setAlignment(Qt::AlignCenter);
@@ -234,6 +239,7 @@ void MainWindow::buildUi() {
     lenShow->setFont(lbf);
     auto *lenUp   = makeStep("+", "Grow active pattern by 1 row "
                                   "(REST + ENDPATT).");
+    lenUp->setAccessibleName("Grow pattern");
     pbLay->addWidget(lenDown);
     pbLay->addWidget(lenShow);
     pbLay->addWidget(lenUp);
@@ -341,8 +347,14 @@ void MainWindow::buildUi() {
                          "and 'move only the clicked channel'. Ctrl-click on a "
                          "row inverts the mode for that one click.");
     omToggle->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    omToggle->setAccessibleDescription(
+        "Order map navigation mode: move all channels together, or only the clicked channel.");
     omLay->addWidget(omToggle);
     orderMap_ = new OrderMiniMap(omWrap);
+    orderMap_->setAccessibleName("Order map");
+    orderMap_->setAccessibleDescription(
+        "Vertical overview of all orderlist entries with the playback marker. "
+        "Click to move the cursor; Ctrl+click moves only the clicked channel.");
     omLay->addWidget(orderMap_, 1);
     orderMapDock_->setWidget(omWrap);
     // No DockWidgetFloatable: the float / detach button in the dock title
@@ -377,6 +389,8 @@ void MainWindow::buildUi() {
             "Toggle the colour bit on every instrument. Double-click a "
             "single row in the list below to flip just that one.");
         colAllBtn->setToolButtonStyle(Qt::ToolButtonTextOnly);
+        colAllBtn->setAccessibleDescription(
+            "Toggle the colour bit on every instrument. Double-click a row below to flip just one.");
         iqLay->addWidget(colAllBtn);
         insQuick_ = new InstrumentQuickList(iqWrap);
         iqLay->addWidget(insQuick_, 1);
@@ -491,6 +505,30 @@ void MainWindow::buildUi() {
     followA->setShortcut(Qt::CTRL | Qt::Key_F);
     followA->setCheckable(true);
     connect(followA, &QAction::triggered, this, &MainWindow::toggleFollowPlay);
+
+    // Accessibility: self-voicing of the pattern-editor cursor. Speaks the
+    // note / instrument / command under the cursor as you move and edit.
+    auto *speakA = viewMenu->addAction("&Speak cursor (accessibility)");
+    speakA->setCheckable(true);
+    speakA->setToolTip(
+        "Self-voicing: speak the note / instrument / command under the "
+        "pattern-editor cursor as you move and edit, via the system "
+        "text-to-speech engine.");
+    if (!Speech::instance().compiledIn()) {
+        speakA->setEnabled(false);
+        speakA->setToolTip(speakA->toolTip() +
+            "  (this build was compiled without the Qt TextToSpeech module)");
+    } else {
+        QSettings s;
+        bool on = s.value("editor/speakCursor", false).toBool();
+        speakA->setChecked(on);
+        Speech::instance().setEnabled(on);
+    }
+    connect(speakA, &QAction::toggled, this, [](bool on) {
+        Speech::instance().setEnabled(on);
+        QSettings s; s.setValue("editor/speakCursor", on);
+        if (on) Speech::instance().say("Speech enabled", Speech::Priority::Status);
+    });
 
     auto *blinkA = viewMenu->addAction("&Blink active instruments");
     blinkA->setCheckable(true);
@@ -794,10 +832,15 @@ void MainWindow::buildUi() {
     tb->addAction(playPosA);
     tb->addAction(playPatA);
     if (auto *btn = qobject_cast<QToolButton*>(tb->widgetForAction(playA)))
-        { btn->setObjectName("playBegin"); btn->setText("⏮ Begin"); playBeginBtn_ = btn; }
+        { btn->setObjectName("playBegin"); btn->setText("⏮ Begin");
+          btn->setAccessibleName("Play from beginning");
+          btn->setAccessibleDescription("Start playback from the first pattern of the song.");
+          playBeginBtn_ = btn; }
     if (auto *btn = qobject_cast<QToolButton*>(tb->widgetForAction(playPosA))) {
         btn->setObjectName("playPos");
         btn->setText("▶ Pos");
+        btn->setAccessibleName("Play or pause from position");
+        btn->setAccessibleDescription("Toggle playback from the current order position.");
         playPosBtn_ = btn;
         // Lock width to the wider of '▶ Pos' / '⏸ Pause' so the rest of
         // the toolbar doesn't shift left/right every time the label
@@ -809,7 +852,10 @@ void MainWindow::buildUi() {
     }
     // onTransportChanged re-labels playPos between ▶ Pos / ⏸ Pause.
     if (auto *btn = qobject_cast<QToolButton*>(tb->widgetForAction(playPatA)))
-        { btn->setObjectName("playPatt");  btn->setText("⟳ Patt"); playPattBtn_ = btn; }
+        { btn->setObjectName("playPatt");  btn->setText("⟳ Patt");
+          btn->setAccessibleName("Play pattern");
+          btn->setAccessibleDescription("Loop the current pattern continuously.");
+          playPattBtn_ = btn; }
 
     auto addSpacer = [&](int w = 28) {
         auto *spacer = new QWidget(tb);
@@ -843,7 +889,14 @@ void MainWindow::syncStack() {
     if (editmode < 0 || editmode > EDIT_NAMES) editmode = EDIT_PATTERN;
     stack_->setCurrentIndex(editmode);
     QWidget *w = stack_->currentWidget();
-    if (w) w->setFocus();
+    if (w) {
+        w->setFocus();
+        // Accessibility: announce the editor screen now active. This is the
+        // single funnel point for F5-F8, Tab/Shift-Tab and the Mode menu, so
+        // a blind user always knows which editor they landed on. Reuses the
+        // view's accessibleName ("Pattern editor", "Order and song editor", …).
+        Speech::instance().say(w->accessibleName(), Speech::Priority::Status);
+    }
 }
 
 void MainWindow::cycleEditMode(bool backwards) {
@@ -1631,6 +1684,9 @@ void MainWindow::stopSong() {
 
 void MainWindow::muteCurrentChannel() {
     mutechannel(epchn);
+    // Visible + spoken feedback (showMessage also self-voices).
+    statusStrip_->showMessage(QString("Channel %1 %2")
+        .arg(epchn + 1).arg(chn[epchn].mute ? "muted" : "unmuted"));
 }
 
 // Adjust the speed multiplier with sid_init (fenced), like cycleMultiplier —
@@ -1791,6 +1847,10 @@ void MainWindow::onTransportChanged(bool playing) {
     // play-row highlight (or its clearing on stop) show immediately.
     if (stack_->currentIndex() == EDIT_PATTERN) pattern_->refresh();
     if (orderMap_) orderMap_->refresh();
+    // Accessibility: announce playback start. The stop / pause side already
+    // goes through statusStrip_->showMessage() (which now also speaks), so we
+    // only voice the start here to avoid a double "Paused / Stopped".
+    if (playing) Speech::instance().say("Playing", Speech::Priority::Status);
 }
 
 void MainWindow::onPlayRowChanged() {

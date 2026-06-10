@@ -2,6 +2,7 @@
 #include "Theme.h"
 #include "SdlKeyMap.h"
 #include "UndoStack.h"
+#include "Speech.h"
 
 #include <QHBoxLayout>
 #include <QVBoxLayout>
@@ -272,6 +273,7 @@ private:
 // View
 // ---------------------------------------------------------------------------
 TablesView::TablesView(QWidget *parent) : QWidget(parent) {
+    setAccessibleName("Tables editor");
     Theme::applyDarkPalette(this);
 
     auto *root = new QHBoxLayout(this);
@@ -284,6 +286,7 @@ TablesView::TablesView(QWidget *parent) : QWidget(parent) {
     tabs_->setDocumentMode(true);
     for (int t = 0; t < MAX_TABLES; t++) {
         views_[t]  = new QTableView(this);
+        views_[t]->setAccessibleName(QString("%1 table").arg(tableName[t]));
         models_[t] = new SidTableModel(t, this);
         views_[t]->setModel(models_[t]);
         views_[t]->setItemDelegate(new TableCellDelegate(t, views_[t]));
@@ -500,6 +503,18 @@ void TablesView::onCellSelectionChanged() {
     updateDecoder();
     updateUsedBy();
     updateLegend();
+    // Self-voice the table step under the cursor, reusing the same decode the
+    // visual "what it does" panel shows.
+    if (Speech::instance().enabled()) {
+        unsigned char L = ltable[etnum][etpos], R = rtable[etnum][etpos];
+        QString d = decodeCell(etnum, L, R);
+        Speech::instance().say(
+            QString("%1 step %2. %3")
+                .arg(tableName[etnum])
+                .arg(etpos + 1, 2, 16, QLatin1Char('0')).toUpper()
+                .arg(d.isEmpty() ? QStringLiteral("empty") : d),
+            Speech::Priority::Cursor);
+    }
 }
 
 static QString tableLegendHtml(int t) {

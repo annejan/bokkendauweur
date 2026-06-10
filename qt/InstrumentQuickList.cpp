@@ -18,6 +18,7 @@ extern int songinit;
 }
 
 InstrumentQuickList::InstrumentQuickList(QWidget *parent) : QListWidget(parent) {
+    setAccessibleName("Instruments");
     setMinimumWidth(140);
     setMaximumWidth(200);
     setFont(Theme::monoFont(10));

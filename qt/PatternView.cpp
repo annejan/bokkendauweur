@@ -26,6 +26,7 @@
 #include "UndoStack.h"
 #include "MainWindow.h"
 #include "InstrColors.h"
+#include "Speech.h"
 
 extern "C" {
 #include "gcommon.h"
@@ -87,6 +88,7 @@ static BoomColor boomwhackerColor(int semitone) {
 }
 
 PatternView::PatternView(QWidget *parent) : QAbstractScrollArea(parent) {
+    setAccessibleName("Pattern editor");
     QFont mono = Theme::monoFont(11);
     setFont(mono);
     QFontMetrics fm(mono);
@@ -366,7 +368,44 @@ void PatternView::keyPressEvent(QKeyEvent *e) {
     clearGoatKeys();
     refresh();
     if (!isNav) pushEditIfChanged(this, std::move(before), "Pattern edit");
+    announceCursor();
     emit patternEdited();
+}
+
+// Speak the cell under the edit cursor (note / instrument / command),
+// mirroring how paintEvent() decodes a cell. No-op unless self-voicing is
+// enabled and the TextToSpeech module was built in.
+QString PatternView::cellSpeech(int patnum, int row) const {
+    if (patnum < 0 || patnum >= MAX_PATT || row < 0) return {};
+    const unsigned char *cell = &pattern[patnum][row * 4];
+    unsigned char note = cell[0], ins = cell[1], cmd = cell[2], param = cell[3];
+
+    QString s;
+    if (note == REST)             s = "rest";
+    else if (note == KEYOFF)      s = "key off";
+    else if (note == KEYON)       s = "key on";
+    else if (note == ENDPATT)     s = "end of pattern";
+    else if (note >= FIRSTNOTE && note <= LASTNOTE) {
+        // notename is the display string, e.g. "C-4" / "C#4"; make it read
+        // naturally ("C 4" / "C sharp 4").
+        s = QString::fromLatin1(notename[note - FIRSTNOTE]);
+        s.replace('#', " sharp ").replace('-', " ");
+        s = s.simplified();
+    } else s = "rest";
+
+    if (ins)
+        s += QString(", instrument %1").arg(ins, 2, 16, QLatin1Char('0')).toUpper();
+    if (cmd || param)
+        s += QString(", command %1 %2")
+                 .arg(cmd, 1, 16, QLatin1Char('0'))
+                 .arg(param, 2, 16, QLatin1Char('0')).toUpper();
+    return s;
+}
+
+void PatternView::announceCursor() {
+    if (!Speech::instance().enabled()) return;
+    Speech::instance().say(cellSpeech(epnum[epchn], eppos),
+                           Speech::Priority::Cursor);
 }
 
 int PatternView::channelAtX(int x) const {
@@ -823,6 +862,7 @@ void PatternView::mousePressEvent(QMouseEvent *e) {
             }
         }
         refresh();
+        announceCursor();
         emit patternEdited();
     }
 }

@@ -109,6 +109,11 @@ private:
     int headerStripH_ = 0;
 
     int channelAtX(int x) const;
+    // Accessibility self-voicing: speak the cell under the edit cursor.
+    // Called only on user-driven cursor moves / edits (never from the
+    // periodic refresh timer), so playback doesn't make it chatter.
+    void announceCursor();
+    QString cellSpeech(int patnum, int row) const;
     bool instrColorsOn_ = false;
     bool noteColorsOn_ = false;
     bool sidIndOn_ = true;

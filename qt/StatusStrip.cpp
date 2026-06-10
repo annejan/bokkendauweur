@@ -1,5 +1,6 @@
 #include "StatusStrip.h"
 #include "Theme.h"
+#include "Speech.h"
 
 #include <QHBoxLayout>
 #include <QLabel>
@@ -127,6 +128,26 @@ StatusStrip::StatusStrip(QWidget *parent) : QFrame(parent) {
     follow_->setToolTip("Click to toggle follow-play. Also: Ctrl+F.");
     connect(follow_, &ClickableLabel::clicked, this, &StatusStrip::followClicked);
     message_   = makeSegment("", Theme::C::textDim, this);
+
+    // Accessibility: these segments show live values as their label text, so a
+    // screen reader already reads the value as the name. We add a description
+    // (role + how to interact) WITHOUT overriding accessibleName, which would
+    // otherwise hide the live value.
+    transport_->setAccessibleDescription("Transport state: stopped, playing or paused.");
+    position_->setAccessibleDescription("Edit cursor position: row, pattern and order.");
+    tempo_->setAccessibleDescription(
+        "Speed multiplier. Click to cycle half, 1x, 2x, 3x, 4x. Also Shift+F5 and Shift+F6.");
+    octave_->setAccessibleDescription(
+        "Record octave 0 to 7. Click cycles up, wheel scrolls by one, keys * and / raise and lower.");
+    record_->setAccessibleDescription(
+        "Record mode. On: note and hex keys write into the pattern. Off: keys audition only. Toggle with Space.");
+    instr_->setAccessibleDescription("Current instrument number.");
+    sid_->setAccessibleDescription("SID 1 chip model. Click to toggle 6581 and 8580. Also Shift+F8.");
+    sid2_->setAccessibleDescription(
+        "SID 2 chip model, active only in stereo / dual-SID mode. Click to toggle 6581 and 8580.");
+    ntsc_->setAccessibleDescription("Click to toggle PAL 50 hertz and NTSC 60 hertz timing.");
+    follow_->setAccessibleDescription(
+        "Follow-play: the editor cursor follows playback. Click to toggle. Also Ctrl+F.");
 
     auto addSep = [&]() {
         auto *sep = new QFrame(this);
@@ -264,6 +285,10 @@ void StatusStrip::refresh() {
 
 void StatusStrip::showMessage(const QString &t, int ms) {
     message_->setText(t);
+    // Accessibility: these are discrete, user-triggered status messages
+    // (loaded / saved / SID model / NTSC / follow / octave / errors …), so
+    // voice them too. No-op unless self-voicing is enabled.
+    Speech::instance().say(t, Speech::Priority::Status);
     if (ms > 0) {
         QTimer::singleShot(ms, message_, [this]{ message_->setText(""); });
     }

@@ -388,6 +388,7 @@ static QWidget *makeNybbleRow(QSpinBox *spin, QWidget *parent) {
 // ---------------------------------------------------------------------------
 
 InstrumentView::InstrumentView(QWidget *parent) : QWidget(parent) {
+    setAccessibleName("Instrument editor");
     Theme::applyDarkPalette(this);
 
     auto *root = new QHBoxLayout(this);
@@ -470,15 +471,19 @@ InstrumentView::InstrumentView(QWidget *parent) : QWidget(parent) {
                        "Attack 0 can make the first wavetable row silent.");
     auto *envForm = new QFormLayout(envBox);
     attack_ = makeNybbleSpin(envBox);
+    attack_->setAccessibleName("Attack");
     attack_->setToolTip("Attack rate ($0 fastest = 2ms, $F slowest = 8s). "
                         "Set high on pads/strings, low on bass/lead.");
     decay_ = makeNybbleSpin(envBox);
+    decay_->setAccessibleName("Decay");
     decay_->setToolTip("Decay rate from peak to sustain level. "
                        "$0 = 6ms, $F = 24s. Controls how fast the note 'rings down'.");
     sustain_ = makeNybbleSpin(envBox);
+    sustain_->setAccessibleName("Sustain");
     sustain_->setToolTip("Sustain level ($0 silent, $F loudest). "
                          "Held while gate is on. Set to 0 for pluck/percussive.");
     release_ = makeNybbleSpin(envBox);
+    release_->setAccessibleName("Release");
     release_->setToolTip("Release rate after key-off ($0 fastest, $F slowest). "
                          "Watch out: A=0, R=1 can ADSR-bug on some chips.");
     envForm->addRow("Attack",  makeNybbleRow(attack_,  envBox));
@@ -496,12 +501,15 @@ InstrumentView::InstrumentView(QWidget *parent) : QWidget(parent) {
                        "$00 means 'no execution' (except Wave, where $00 is unusable).");
     auto *tblForm = new QFormLayout(tblBox);
     wave_ = makeHexSpin(tblBox);
+    wave_->setAccessibleName("Wavetable position");
     wave_->setToolTip("Wavetable start step. Drives waveform + arpeggio + "
                       "drum programs. Must be ≥ $01.");
     pulse_ = makeHexSpin(tblBox);
+    pulse_->setAccessibleName("Pulsetable position");
     pulse_->setToolTip("Pulsetable start step. $00 = leave pulse execution "
                        "alone. Used for PWM sweeps.");
     filter_ = makeHexSpin(tblBox);
+    filter_->setAccessibleName("Filtertable position");
     filter_->setToolTip("Filtertable start step. $00 = leave filter alone. "
                         "Only one channel should drive the filter at a time.");
     vibParam_ = makeHexSpin(tblBox);
@@ -620,6 +628,10 @@ InstrumentView::InstrumentView(QWidget *parent) : QWidget(parent) {
     right->addWidget(envHdr);
 
     adsr_ = new AdsrPreview(this);
+    adsr_->setAccessibleName("ADSR envelope shape");
+    adsr_->setAccessibleDescription(
+        "Visual SID attack / decay / sustain / release envelope. Drag the handles to edit; "
+        "the attack, decay, sustain and release fields update in step.");
     // Drag-to-edit: dragging the A / D+S / R handles on the preview
     // pushes new nybble values into the spinboxes, which already wire
     // into instr[einum] via onAdChanged / onSrChanged. Wrapping the
@@ -657,6 +669,7 @@ InstrumentView::InstrumentView(QWidget *parent) : QWidget(parent) {
     right->addWidget(waveHdr);
 
     wavePrev_ = new WavetablePreview(this);
+    wavePrev_->setAccessibleName("Wavetable program preview");
     wavePrev_->setMinimumHeight(40);
     right->addWidget(wavePrev_);
 

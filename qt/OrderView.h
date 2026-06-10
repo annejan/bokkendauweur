@@ -61,4 +61,5 @@ private:
     void syncCursorFromGlobal();
     void syncGlobalFromCursor();
     void updatePreview();
+    void announceCursor();   // self-voice the order cell under the cursor
 };
