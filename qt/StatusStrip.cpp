@@ -98,10 +98,12 @@ StatusStrip::StatusStrip(QWidget *parent) : QFrame(parent) {
                         "wheel scrolls ±1. Keyboard: * raises, / lowers.");
     connect(octave_, &ClickableLabel::clicked, this, &StatusStrip::octaveClicked);
     octave_->installEventFilter(this);
-    record_    = makeSegment("● REC", Theme::C::vuRed, this);
+    record_    = makeClickable("● REC", Theme::C::vuRed, this);
     record_->setToolTip("Pattern-editor record mode. Red = ON: note / hex keys "
                         "write into the pattern at the cursor. Dim = OFF: keys "
-                        "audition (jam) without modifying the song. Toggle: Space.");
+                        "audition (jam) without modifying the song. Toggle: Space "
+                        "or click here.");
+    connect(record_, &ClickableLabel::clicked, this, &StatusStrip::recordClicked);
     instr_     = makeSegment("Ins 01", Theme::C::instr, this);
     sid_       = makeClickable("6581", Theme::C::highlight, this);
     sid_->setToolTip("SID1 chip model. Click to toggle 6581 ↔ 8580. Also: Shift+F8.");

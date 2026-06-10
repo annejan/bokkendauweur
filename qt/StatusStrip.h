@@ -22,13 +22,14 @@ signals:
     void ntscClicked();
     void octaveClicked();   // cycle up (wraps 7 -> 0)
     void octaveDelta(int);  // mouse wheel: ±1
+    void recordClicked();   // status-strip click on REC -> toggle recordmode
 
 private:
     QLabel *transport_;
     QLabel *position_;
     ClickableLabel *tempo_;
     ClickableLabel *octave_;
-    QLabel *record_;
+    ClickableLabel *record_;
     QLabel *instr_;
     ClickableLabel *sid_;
     ClickableLabel *sid2_;

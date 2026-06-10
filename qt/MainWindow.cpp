@@ -63,6 +63,7 @@ extern "C" {
 
 extern char songfilename[];
 extern char songpath[];
+extern int recordmode;
 extern char instrfilename[];
 extern char instrpath[];
 extern char songname[MAX_STR];
@@ -274,6 +275,13 @@ void MainWindow::buildUi() {
         if (n > 7) n = 7;
         epoctave = n;
         statusStrip_->showMessage(QString("Octave %1").arg(epoctave));
+        refreshAll();
+    });
+    connect(statusStrip_, &StatusStrip::recordClicked, this, [this]() {
+        recordmode ^= 1;
+        statusStrip_->showMessage(recordmode
+                                  ? "Record mode ON"
+                                  : "Record mode OFF (audition)");
         refreshAll();
     });
 
