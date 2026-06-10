@@ -869,6 +869,7 @@ void InstrumentView::markDirty() {
         saved_ = instr[einum];
         savedSlot_ = einum;
     }
+    if (dirty_) return;   // already amber-styled; no UI churn per keystroke
     dirty_ = true;
     if (applyBtn_) {
         applyBtn_->setEnabled(true);

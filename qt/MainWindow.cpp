@@ -303,7 +303,16 @@ void MainWindow::buildUi() {
         // (EDIT_TABLES) and emit edited(); without syncStack the editmode
         // change never reaches the QStackedWidget and the user just sees
         // a refresh of the instrument editor.
-        syncStack();
+        //
+        // syncStack() force-focuses the stack page, which stole focus off
+        // the active instrument-name QLineEdit every keystroke (the
+        // QLineEdit was a descendant of the stack page, so the stack
+        // page's setFocus() bounced focus to the first focusable child
+        // — the Apply button). Skip the syncStack when the editmode
+        // didn't actually change.
+        if (stack_->currentIndex() != editmode) {
+            syncStack();
+        }
         refreshAll();
     });
     connect(tables_, &TablesView::edited, this, &MainWindow::refreshAll);
