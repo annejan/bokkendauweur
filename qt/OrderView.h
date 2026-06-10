@@ -35,6 +35,8 @@ private slots:
     void onSelectionChanged();
     void insertRow();
     void deleteRow();
+    void insertRowAllChannels();
+    void deleteRowAllChannels();
     void insertTransposeUp();
     void insertTransposeDown();
     void insertRepeat();
@@ -51,6 +53,10 @@ private:
     QLabel *patternPreview_ = nullptr;
     bool updating_ = false;
 
+protected:
+    bool eventFilter(QObject *o, QEvent *e) override;
+
+private:
     void writeAtCursor(unsigned char v);
     void syncCursorFromGlobal();
     void syncGlobalFromCursor();

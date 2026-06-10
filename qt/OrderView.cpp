@@ -13,6 +13,7 @@
 #include <QLabel>
 #include <QHeaderView>
 #include <QStyledItemDelegate>
+#include <QKeyEvent>
 #include <QPainter>
 #include <QInputDialog>
 #include <QMenu>
@@ -239,8 +240,14 @@ OrderView::OrderView(QWidget *parent) : QWidget(parent) {
         topBar->addWidget(b);
         return b;
     };
-    addBtn("Insert",  "Insert empty row above cursor", &OrderView::insertRow);
-    addBtn("Delete",  "Delete row at cursor",          &OrderView::deleteRow);
+    addBtn("Ins cell",  "Insert empty cell at cursor (this channel only). Key: Insert.",
+           &OrderView::insertRow);
+    addBtn("Ins row",   "Insert empty row across ALL channels at the cursor's row. Key: Shift+Insert.",
+           &OrderView::insertRowAllChannels);
+    addBtn("Del cell",  "Delete cell at cursor (this channel only). Key: Delete.",
+           &OrderView::deleteRow);
+    addBtn("Del row",   "Delete row across ALL channels at the cursor's row. Key: Shift+Delete.",
+           &OrderView::deleteRowAllChannels);
     addBtn("+1",      "Insert transpose-up command",   &OrderView::insertTransposeUp);
     addBtn("-1",      "Insert transpose-down command", &OrderView::insertTransposeDown);
     addBtn("R",       "Insert repeat command",         &OrderView::insertRepeat);
@@ -278,6 +285,7 @@ OrderView::OrderView(QWidget *parent) : QWidget(parent) {
     table_->setFont(Theme::monoFont(11));
     connect(table_->selectionModel(), &QItemSelectionModel::currentChanged,
             this, [this](const QModelIndex &, const QModelIndex &){ onSelectionChanged(); });
+    table_->installEventFilter(this);
     table_->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(table_, &QTableView::customContextMenuRequested, this,
             [this](const QPoint &pos){
@@ -285,8 +293,14 @@ OrderView::OrderView(QWidget *parent) : QWidget(parent) {
                 if (!idx.isValid()) return;
                 table_->setCurrentIndex(idx);
                 QMenu m(this);
-                m.addAction("Insert empty row",     this, &OrderView::insertRow);
-                m.addAction("Delete row",           this, &OrderView::deleteRow);
+                m.addAction("Insert empty cell (this channel)\tIns",
+                            this, &OrderView::insertRow);
+                m.addAction("Insert empty row (all channels)\tShift+Ins",
+                            this, &OrderView::insertRowAllChannels);
+                m.addAction("Delete cell (this channel)\tDel",
+                            this, &OrderView::deleteRow);
+                m.addAction("Delete row (all channels)\tShift+Del",
+                            this, &OrderView::deleteRowAllChannels);
                 m.addSeparator();
                 m.addAction("Insert +1 transpose",  this, &OrderView::insertTransposeUp);
                 m.addAction("Insert -1 transpose",  this, &OrderView::insertTransposeDown);
@@ -470,6 +484,49 @@ void OrderView::insertRow() {
     emit edited();
 }
 
+bool OrderView::eventFilter(QObject *o, QEvent *e) {
+    if (o == table_ && e->type() == QEvent::KeyPress) {
+        auto *ke = static_cast<QKeyEvent*>(e);
+        bool shift = ke->modifiers() & Qt::ShiftModifier;
+        if (ke->key() == Qt::Key_Insert) {
+            if (shift) insertRowAllChannels();
+            else       insertRow();
+            return true;
+        }
+        if (ke->key() == Qt::Key_Delete) {
+            if (shift) deleteRowAllChannels();
+            else       deleteRow();
+            return true;
+        }
+    }
+    return QWidget::eventFilter(o, e);
+}
+
+void OrderView::insertRowAllChannels() {
+    auto idx = table_->currentIndex();
+    if (!idx.isValid()) return;
+    int r = idx.row();
+    QByteArray before = captureSongSnapshot();
+    int nch = stereo_mode ? MAX_CHN : 3;
+    for (int c = 0; c < nch; c++) {
+        if (songlen[esnum][c] >= MAX_SONGLEN) continue;
+        if (r > songlen[esnum][c]) continue;
+        int N = songlen[esnum][c];
+        unsigned char loop    = songorder[esnum][c][N];
+        unsigned char restart = songorder[esnum][c][N + 1];
+        for (int i = N - 1; i >= r; i--)
+            songorder[esnum][c][i + 1] = songorder[esnum][c][i];
+        songorder[esnum][c][r] = 0;
+        songlen[esnum][c]++;
+        songorder[esnum][c][N + 1] = loop;
+        songorder[esnum][c][N + 2] = restart;
+    }
+    model_->refresh();
+    syncCursorFromGlobal();
+    pushEditIfChanged(this, std::move(before), "Insert order row (all channels)");
+    emit edited();
+}
+
 void OrderView::deleteRow() {
     auto idx = table_->currentIndex();
     if (!idx.isValid()) return;
@@ -488,6 +545,31 @@ void OrderView::deleteRow() {
     model_->refresh();
     syncCursorFromGlobal();
     pushEditIfChanged(this, std::move(before), "Delete order row");
+    emit edited();
+}
+
+void OrderView::deleteRowAllChannels() {
+    auto idx = table_->currentIndex();
+    if (!idx.isValid()) return;
+    int r = idx.row();
+    QByteArray before = captureSongSnapshot();
+    int nch = stereo_mode ? MAX_CHN : 3;
+    for (int c = 0; c < nch; c++) {
+        if (songlen[esnum][c] <= 1) continue;
+        if (r >= songlen[esnum][c]) continue;
+        int N = songlen[esnum][c];
+        unsigned char loop    = songorder[esnum][c][N];
+        unsigned char restart = songorder[esnum][c][N + 1];
+        for (int i = r; i < N - 1; i++)
+            songorder[esnum][c][i] = songorder[esnum][c][i + 1];
+        songlen[esnum][c]--;
+        songorder[esnum][c][N - 1] = loop;
+        songorder[esnum][c][N]     = restart;
+        if (espos[c] >= songlen[esnum][c]) espos[c] = songlen[esnum][c] - 1;
+    }
+    model_->refresh();
+    syncCursorFromGlobal();
+    pushEditIfChanged(this, std::move(before), "Delete order row (all channels)");
     emit edited();
 }
 
