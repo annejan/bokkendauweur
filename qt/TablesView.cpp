@@ -7,6 +7,7 @@
 #include <QVBoxLayout>
 #include <QTabWidget>
 #include <QTableView>
+#include <QScrollBar>
 #include <QHeaderView>
 #include <QPushButton>
 #include <QToolButton>
@@ -291,6 +292,13 @@ TablesView::TablesView(QWidget *parent) : QWidget(parent) {
                                    | QAbstractItemView::EditKeyPressed);
         views_[t]->setShowGrid(false);
         views_[t]->verticalHeader()->hide();
+        // Per-pixel wheel scroll feels right for the 255-row tables —
+        // the default per-item step lurched a single 22-px row at a
+        // time. The visible scroll bar stays in place; only the wheel
+        // increment / kinetic feel change.
+        views_[t]->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+        views_[t]->setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
+        views_[t]->verticalScrollBar()->setSingleStep(22);
         auto *hh = views_[t]->horizontalHeader();
         hh->setSectionResizeMode(0, QHeaderView::ResizeToContents);
         hh->setSectionResizeMode(1, QHeaderView::ResizeToContents);
@@ -452,6 +460,18 @@ TablesView::TablesView(QWidget *parent) : QWidget(parent) {
 void TablesView::onTabChanged(int idx) {
     if (updating_ || idx < 0 || idx >= MAX_TABLES) return;
     etnum = idx;
+    // Auto-scroll the newly-shown table to the active instrument's
+    // pointer row so the user doesn't have to manually find row $XX
+    // every time they switch tabs. ins.ptr[t] is the start row of the
+    // current instrument's program in table t.
+    if (einum >= 1 && einum < MAX_INSTR) {
+        int row = instr[einum].ptr[idx];
+        if (row >= 0 && row < MAX_TABLELEN) {
+            QModelIndex target = models_[idx]->index(row, 0);
+            views_[idx]->scrollTo(target, QAbstractItemView::PositionAtCenter);
+            views_[idx]->setCurrentIndex(target);
+        }
+    }
     onCellSelectionChanged();
     emit edited();
 }
