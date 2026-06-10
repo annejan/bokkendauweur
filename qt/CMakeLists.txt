@@ -98,6 +98,7 @@ set(QT_SRC
     StatusStrip.cpp
     UndoStack.cpp
     Speech.cpp
+    PatternAccessible.cpp
     RpcServer.cpp
     PaAudio.cpp
     CoreEvents.cpp
