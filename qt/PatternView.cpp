@@ -431,6 +431,7 @@ void PatternView::copySelectionToClipboard(bool cut) {
 
 void PatternView::clearSelectedCells() {
     if (!hasSelection()) return;
+    QByteArray before = captureSongSnapshot();
     SelRect s = normalisedSelection();
     for (int c = s.chLo; c <= s.chHi; c++) {
         int patnum = epnum[c];
@@ -442,11 +443,13 @@ void PatternView::clearSelectedCells() {
     }
     countpatternlengths();
     refresh();
+    pushEditIfChanged(this, std::move(before), "Clear cells");
     emit patternEdited();
 }
 
 void PatternView::removeSelectedRows() {
     if (!hasSelection()) return;
+    QByteArray before = captureSongSnapshot();
     SelRect s = normalisedSelection();
     int rowsToRemove = s.rowHi - s.rowLo + 1;
     for (int c = s.chLo; c <= s.chHi; c++) {
@@ -468,6 +471,7 @@ void PatternView::removeSelectedRows() {
     countpatternlengths();
     clearSelection();
     refresh();
+    pushEditIfChanged(this, std::move(before), "Remove rows");
     emit patternEdited();
 }
 
@@ -490,6 +494,7 @@ void PatternView::pasteFromClipboard(bool repeatFill) {
     QJsonArray cells = doc.value("cells").toArray();
     if (srcCh <= 0 || srcRows <= 0) return;
 
+    QByteArray before = captureSongSnapshot();
     int startRow = eppos;
     int startCh  = epchn;
     for (int c = 0; c < srcCh; c++) {
@@ -515,6 +520,8 @@ void PatternView::pasteFromClipboard(bool repeatFill) {
     }
     countpatternlengths();
     refresh();
+    pushEditIfChanged(this, std::move(before),
+                      repeatFill ? "Paste (repeat)" : "Paste");
     emit patternEdited();
 }
 
@@ -524,6 +531,7 @@ void PatternView::insertRowAtCursor() {
     int plen = pattlen[patnum];
     int row = eppos;
     if (row < 0 || row > plen) return;
+    QByteArray before = captureSongSnapshot();
 
     if (insertGrows_) {
         if (plen >= MAX_PATTROWS) return;
@@ -548,6 +556,7 @@ void PatternView::insertRowAtCursor() {
     p[0] = REST; p[1] = 0; p[2] = 0; p[3] = 0;
     countpatternlengths();
     refresh();
+    pushEditIfChanged(this, std::move(before), "Insert row");
     emit patternEdited();
 }
 
@@ -557,6 +566,7 @@ void PatternView::deleteRowAtCursor() {
     int plen = pattlen[patnum];
     int row = eppos;
     if (row < 0 || row >= plen) return;
+    QByteArray before = captureSongSnapshot();
 
     if (insertGrows_) {
         // Symmetric to grow: shrink pattern by 1, drop the cursor row.
@@ -580,6 +590,7 @@ void PatternView::deleteRowAtCursor() {
     }
     countpatternlengths();
     refresh();
+    pushEditIfChanged(this, std::move(before), "Delete row");
     emit patternEdited();
 }
 
