@@ -287,10 +287,22 @@ TablesView::TablesView(QWidget *parent) : QWidget(parent) {
         models_[t] = new SidTableModel(t, this);
         views_[t]->setModel(models_[t]);
         views_[t]->setItemDelegate(new TableCellDelegate(t, views_[t]));
-        // No AnyKeyPressed: typing first hex digit used to commit the cell
-        // before the second nybble could be typed.
+        // AnyKeyPressed + SelectedClicked so the user can click a cell
+        // and start typing the hex value directly. The custom QLineEdit
+        // delegate above has max-length 2 so the original 'first digit
+        // commits' concern doesn't apply. Enter commits + Qt's default
+        // tab/enter behaviour advances the selection to the next row,
+        // so the workflow becomes: click row $00 -> type FA <Enter>
+        // -> type 09 <Enter> -> arrow-key navigate / type next.
         views_[t]->setEditTriggers(QAbstractItemView::DoubleClicked
-                                   | QAbstractItemView::EditKeyPressed);
+                                   | QAbstractItemView::EditKeyPressed
+                                   | QAbstractItemView::AnyKeyPressed
+                                   | QAbstractItemView::SelectedClicked);
+        // Enter commits the active cell and moves selection one row down
+        // (the default Qt behaviour) so streaming values into successive
+        // rows works without reaching for the arrow keys after every
+        // commit.
+        views_[t]->setTabKeyNavigation(true);
         views_[t]->setShowGrid(false);
         views_[t]->verticalHeader()->hide();
         // Per-pixel wheel scroll feels right for the 255-row tables —
