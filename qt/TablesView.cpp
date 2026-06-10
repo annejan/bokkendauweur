@@ -26,6 +26,7 @@ extern "C" {
 extern unsigned char ltable[MAX_TABLES][MAX_TABLELEN];
 extern unsigned char rtable[MAX_TABLES][MAX_TABLELEN];
 extern int etnum;
+extern int einum;
 extern int etpos;
 extern int etcolumn;
 extern int etview[MAX_TABLES];
