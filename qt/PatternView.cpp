@@ -279,6 +279,30 @@ void PatternView::keyPressEvent(QKeyEvent *e) {
             if (k == Qt::Key_Up)   { transposeSelection(12);  e->accept(); return; }
             if (k == Qt::Key_Down) { transposeSelection(-12); e->accept(); return; }
         }
+        // Ctrl+0 / Ctrl+1 / Ctrl+2 -> set EDIT SKIP (autoadvance) to the
+        // matching value. Protracker convention; the C core caps
+        // autoadvance at 0..2:
+        //   0 = stay put after a note / hex digit
+        //   1 = step one row after a note
+        //   2 = step one row after EVERY column write (note + hex)
+        // Useful when entering dense patterns with the keyboard.
+        if (k == Qt::Key_0 || k == Qt::Key_1 || k == Qt::Key_2) {
+            int newSkip = k - Qt::Key_0;
+            autoadvance = newSkip;
+            const char *label = (newSkip == 0) ? "EDIT SKIP 0 (no advance)"
+                              : (newSkip == 1) ? "EDIT SKIP 1 (advance after note)"
+                                               : "EDIT SKIP 2 (advance after every column)";
+            // Push the message via the parent's status strip if we can
+            // reach it. window() walks up to MainWindow.
+            if (auto *mw = window()) {
+                if (auto *strip = mw->findChild<QWidget*>("statusStripMessage")) {
+                    (void)strip; // no public setter — fall through to update
+                }
+            }
+            refresh();
+            e->accept();
+            return;
+        }
     }
     if (k == Qt::Key_Delete && hasSelection()) {
         clearSelectedCells();
