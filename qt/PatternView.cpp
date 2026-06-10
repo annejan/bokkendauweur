@@ -271,6 +271,14 @@ void PatternView::keyPressEvent(QKeyEvent *e) {
             e->accept();
             return;
         }
+        // Ctrl+Shift+Up / Down -> transpose selection by an octave.
+        // Plain Ctrl+Up / Down stays free for any future per-row nudge,
+        // and Shift+arrows stay reserved for the C core's existing
+        // extend-cursor bindings.
+        if (e->modifiers() & Qt::ShiftModifier) {
+            if (k == Qt::Key_Up)   { transposeSelection(12);  e->accept(); return; }
+            if (k == Qt::Key_Down) { transposeSelection(-12); e->accept(); return; }
+        }
     }
     if (k == Qt::Key_Delete && hasSelection()) {
         clearSelectedCells();
@@ -594,6 +602,38 @@ void PatternView::deleteRowAtCursor() {
     emit patternEdited();
 }
 
+void PatternView::transposeSelection(int semis) {
+    if (!hasSelection()) return;
+    QByteArray before = captureSongSnapshot();
+    SelRect s = normalisedSelection();
+    bool changed = false;
+    for (int c = s.chLo; c <= s.chHi; c++) {
+        int patnum = epnum[c];
+        for (int r = s.rowLo; r <= s.rowHi; r++) {
+            if (r < 0 || r >= pattlen[patnum]) continue;
+            unsigned char *p = &pattern[patnum][r * 4];
+            // Only real pitched notes shift. REST / KEYOFF / KEYON / 0
+            // stay put — transposing a release would silently rewrite
+            // it to a note byte and break the song.
+            if (p[0] >= FIRSTNOTE && p[0] <= LASTNOTE) {
+                int n = (int)p[0] + semis;
+                if (n < FIRSTNOTE) n = FIRSTNOTE;
+                if (n > LASTNOTE)  n = LASTNOTE;
+                if ((unsigned char)n != p[0]) {
+                    p[0] = (unsigned char)n;
+                    changed = true;
+                }
+            }
+        }
+    }
+    if (changed) {
+        refresh();
+        pushEditIfChanged(this, std::move(before),
+                          semis > 0 ? "Transpose up" : "Transpose down");
+        emit patternEdited();
+    }
+}
+
 void PatternView::selectAllInChannel() {
     int patnum = epnum[epchn];
     selChAnchor_ = selChCursor_ = epchn;
@@ -777,11 +817,8 @@ void PatternView::mouseMoveEvent(QMouseEvent *e) {
 void PatternView::mouseReleaseEvent(QMouseEvent *e) {
     Q_UNUSED(e);
     dragActive_ = false;
-    // Collapse a zero-area drag back to 'no selection' so a plain click
-    // doesn't leave a spurious 1-cell highlight under the cursor.
-    if (selRowAnchor_ == selRowCursor_ && selChAnchor_ == selChCursor_) {
-        clearSelection();
-    }
+    // Keep the 1-cell selection from a plain click so a subsequent
+    // Shift+click can extend it into a range. Escape clears.
 }
 
 void PatternView::contextMenuEvent(QContextMenuEvent *e) {
@@ -829,6 +866,15 @@ void PatternView::contextMenuEvent(QContextMenuEvent *e) {
     connect(selChan, &QAction::triggered, this, [this]{ selectAllInChannel(); });
     auto *selAll = menu.addAction("Select all channels");
     connect(selAll, &QAction::triggered, this, [this]{ selectAllRows(); });
+
+    menu.addSeparator();
+
+    auto *trUp = menu.addAction("Transpose octave &up (+12)\tCtrl+Shift+Up");
+    trUp->setEnabled(sel);
+    connect(trUp, &QAction::triggered, this, [this]{ transposeSelection(12); });
+    auto *trDn = menu.addAction("Transpose octave &down (-12)\tCtrl+Shift+Down");
+    trDn->setEnabled(sel);
+    connect(trDn, &QAction::triggered, this, [this]{ transposeSelection(-12); });
 
     menu.exec(e->globalPos());
 }

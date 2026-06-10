@@ -56,6 +56,11 @@ public slots:
     void deleteRowAtCursor();
     void selectAllInChannel();
     void selectAllRows();
+    // Transpose every note cell inside the current selection by `semis`
+    // semitones, clamped to the GoatTracker note range. Skips REST /
+    // KEYOFF / KEYON / instrument-only cells. +12 / -12 are the octave
+    // shortcuts bound to Ctrl+Shift+Up / Ctrl+Shift+Down.
+    void transposeSelection(int semis);
 
 signals:
     void patternEdited();
