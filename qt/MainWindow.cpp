@@ -64,6 +64,7 @@ extern "C" {
 extern char songfilename[];
 extern char songpath[];
 extern int recordmode;
+extern int autoadvance;
 extern char instrfilename[];
 extern char instrpath[];
 extern char songname[MAX_STR];
@@ -282,6 +283,14 @@ void MainWindow::buildUi() {
         statusStrip_->showMessage(recordmode
                                   ? "Record mode ON"
                                   : "Record mode OFF (audition)");
+        refreshAll();
+    });
+    connect(statusStrip_, &StatusStrip::skipClicked, this, [this]() {
+        autoadvance = (autoadvance + 1) % 3;
+        const char *m = (autoadvance == 0) ? "EDIT SKIP 0 (no advance)"
+                      : (autoadvance == 1) ? "EDIT SKIP 1 (advance after note)"
+                                           : "EDIT SKIP 2 (advance after every column)";
+        statusStrip_->showMessage(m);
         refreshAll();
     });
 

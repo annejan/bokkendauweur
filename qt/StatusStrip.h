@@ -23,6 +23,7 @@ signals:
     void octaveClicked();   // cycle up (wraps 7 -> 0)
     void octaveDelta(int);  // mouse wheel: ±1
     void recordClicked();   // status-strip click on REC -> toggle recordmode
+    void skipClicked();     // status-strip click on SKIP -> cycle autoadvance 0..2
 
 private:
     QLabel *transport_;
@@ -30,6 +31,7 @@ private:
     ClickableLabel *tempo_;
     ClickableLabel *octave_;
     ClickableLabel *record_;
+    ClickableLabel *skip_;
     QLabel *instr_;
     ClickableLabel *sid_;
     ClickableLabel *sid2_;

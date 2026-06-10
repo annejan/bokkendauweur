@@ -45,6 +45,7 @@ extern unsigned multiplier;
 extern unsigned ntsc;
 extern unsigned keypreset;
 extern int recordmode;
+extern int autoadvance;
 extern CHN chn[MAX_CHN];
 extern INSTR instr[MAX_INSTR];
 extern unsigned char pattern[MAX_PATT][MAX_PATTROWS*4+4];
@@ -104,6 +105,13 @@ StatusStrip::StatusStrip(QWidget *parent) : QFrame(parent) {
                         "audition (jam) without modifying the song. Toggle: Space "
                         "or click here.");
     connect(record_, &ClickableLabel::clicked, this, &StatusStrip::recordClicked);
+    skip_      = makeClickable("Skip 1", Theme::C::text, this);
+    skip_->setToolTip("EDIT SKIP — rows the cursor advances after each input.\n"
+                      "0 = stay put after note / hex digit.\n"
+                      "1 = step one row after a note (default).\n"
+                      "2 = step one row after EVERY column write.\n"
+                      "Click to cycle 0 → 1 → 2 → 0. Keyboard: Ctrl+0, Ctrl+1, Ctrl+2.");
+    connect(skip_, &ClickableLabel::clicked, this, &StatusStrip::skipClicked);
     instr_     = makeSegment("Ins 01", Theme::C::instr, this);
     sid_       = makeClickable("6581", Theme::C::highlight, this);
     sid_->setToolTip("SID1 chip model. Click to toggle 6581 ↔ 8580. Also: Shift+F8.");
@@ -139,6 +147,8 @@ StatusStrip::StatusStrip(QWidget *parent) : QFrame(parent) {
     layout->addWidget(octave_);
     addSep();
     layout->addWidget(record_);
+    addSep();
+    layout->addWidget(skip_);
     addSep();
     layout->addWidget(instr_);
     addSep();
@@ -208,6 +218,15 @@ void StatusStrip::refresh() {
     QPalette rp = record_->palette();
     rp.setColor(QPalette::WindowText, recordmode ? Theme::C::vuRed : Theme::C::textDim);
     record_->setPalette(rp);
+    // EDIT SKIP — autoadvance is 0..2 in the C core.
+    int sk = autoadvance;
+    if (sk < 0) sk = 0;
+    if (sk > 2) sk = 2;
+    skip_->setText(QString("Skip %1").arg(sk));
+    QPalette sp = skip_->palette();
+    sp.setColor(QPalette::WindowText, sk == 0 ? Theme::C::textDim
+                                              : Theme::C::text);
+    skip_->setPalette(sp);
     instr_->setText(QString("Ins %1").arg(einum, 2, 16, QLatin1Char('0')).toUpper());
     sid_->setText(QString("SID1 %1").arg(sidmodel ? "8580" : "6581"));
     if (stereo_mode) {
