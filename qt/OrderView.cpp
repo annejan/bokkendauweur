@@ -450,10 +450,20 @@ void OrderView::insertRow() {
     int c = idx.column(); int r = idx.row();
     if (songlen[esnum][c] >= MAX_SONGLEN) return;
     QByteArray before = captureSongSnapshot();
-    for (int i = songlen[esnum][c]; i > r; i--)
-        songorder[esnum][c][i] = songorder[esnum][c][i - 1];
+    // The orderlist stores LOOPSONG + restart pos as two trailing bytes
+    // past songlen[]. Snapshot them so the shift loop below doesn't drag
+    // LOOPSONG into the new song-data slot (the user-visible 'RST got
+    // overwritten' bug) — we replant both at the new tail after the
+    // shift completes.
+    int N = songlen[esnum][c];
+    unsigned char loop    = songorder[esnum][c][N];      // LOOPSONG marker
+    unsigned char restart = songorder[esnum][c][N + 1];  // restart row
+    for (int i = N - 1; i >= r; i--)
+        songorder[esnum][c][i + 1] = songorder[esnum][c][i];
     songorder[esnum][c][r] = 0;
     songlen[esnum][c]++;
+    songorder[esnum][c][N + 1] = loop;
+    songorder[esnum][c][N + 2] = restart;
     model_->refresh();
     syncCursorFromGlobal();
     pushEditIfChanged(this, std::move(before), "Insert order row");
@@ -466,9 +476,14 @@ void OrderView::deleteRow() {
     int c = idx.column(); int r = idx.row();
     if (songlen[esnum][c] <= 1) return;
     QByteArray before = captureSongSnapshot();
-    for (int i = r; i < songlen[esnum][c] - 1; i++)
+    int N = songlen[esnum][c];
+    unsigned char loop    = songorder[esnum][c][N];
+    unsigned char restart = songorder[esnum][c][N + 1];
+    for (int i = r; i < N - 1; i++)
         songorder[esnum][c][i] = songorder[esnum][c][i + 1];
     songlen[esnum][c]--;
+    songorder[esnum][c][N - 1] = loop;
+    songorder[esnum][c][N]     = restart;
     if (espos[c] >= songlen[esnum][c]) espos[c] = songlen[esnum][c] - 1;
     model_->refresh();
     syncCursorFromGlobal();
