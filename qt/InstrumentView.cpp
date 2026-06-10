@@ -447,9 +447,19 @@ InstrumentView::InstrumentView(QWidget *parent) : QWidget(parent) {
     presetBox_->addItem("Drum kit: Open hat");
     auto *applyBtn = new QPushButton("Apply", this);
     applyBtn->setToolTip("Overwrite this instrument's envelope with the "
-                         "selected preset.");
+                         "selected preset. (Selecting from the dropdown "
+                         "applies immediately; this button re-applies the "
+                         "current selection.)");
     connect(applyBtn, &QPushButton::clicked, this,
             [this]{ applyPreset(presetBox_->currentIndex()); });
+    // Selecting from the dropdown applies the preset immediately — the
+    // separate Apply button is kept for users who want to re-apply after
+    // hand-editing the ADSR fields.
+    connect(presetBox_, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [this](int idx) {
+                if (updating_) return;
+                applyPreset(idx);
+            });
     presetRow->addWidget(presetLbl);
     presetRow->addWidget(presetBox_, 1);
     presetRow->addWidget(applyBtn);
@@ -1122,6 +1132,34 @@ void InstrumentView::applyPreset(int index) {
     ins.ad = p.ad;
     ins.sr = p.sr;
     ins.firstwave = p.firstwave;
+    ins.gatetimer = 0x02;    // default hard-restart timing
+    ins.vibdelay  = 0x00;
+    // Seed a minimal wavetable program so the preset actually makes
+    // sound when played. Each preset appends a 2-step program at the
+    // next free wavetable slot: 'hold firstwave' then 'jump-back to
+    // step 1' (the WTBL JUMP encoding). We claim slots even if the
+    // user later edits them; this gets a fresh-from-File-New user a
+    // patch that auditions cleanly out of the box.
+    // wavetable format: ltable[c]/rtable[c] columns indexed 1.. with
+    // ltable=0xff + rtable=jump_target_index terminating the program.
+    {
+        // Append a minimal 2-step wavetable program at the next free row.
+        // Step n: hold firstwave. Step n+1: JUMP (0xff) -> rtable = step n
+        // so the wave loops indefinitely after the first frame. ltable[c]
+        // is column 0 (left half), rtable[c] is column 1 (right half).
+        int wstart = 1;
+        while (wstart < MAX_TABLELEN - 2 && ltable[WTBL][wstart] != 0) wstart++;
+        if (wstart < MAX_TABLELEN - 2) {
+            ltable[WTBL][wstart    ] = p.firstwave;
+            rtable[WTBL][wstart    ] = 0x00;
+            ltable[WTBL][wstart + 1] = 0xff;            // JUMP marker
+            rtable[WTBL][wstart + 1] = (unsigned char)wstart;
+            ins.ptr[WTBL] = (unsigned char)wstart;
+            ins.ptr[PTBL] = 0;
+            ins.ptr[FTBL] = 0;
+            ins.ptr[STBL] = 0;
+        }
+    }
     // Only rename if the slot is empty or already a default placeholder.
     char nameBuf[MAX_INSTRNAMELEN + 1];
     std::memcpy(nameBuf, ins.name, MAX_INSTRNAMELEN);
