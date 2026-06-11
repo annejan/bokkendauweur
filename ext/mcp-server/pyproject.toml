@@ -1,0 +1,11 @@
+[project]
+name = "goattracker-qt-mcp"
+version = "0.1.0"
+description = "MCP server exposing GoatTracker Qt's RPC surface as LLM-driven tools."
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=1.0",
+]
+
+[project.scripts]
+goattrk2-mcp = "server:main"

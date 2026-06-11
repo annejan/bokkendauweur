@@ -73,6 +73,14 @@ Three binaries land in `build/qt/`:
 CLI options follow the historic GoatTracker layout; see `goat_tracker_commands.pdf`
 or run `--help`.
 
+## LLM-driving via MCP (optional)
+
+`ext/mcp-server/` ships a Model Context Protocol bridge that re-exposes
+the editor's JSON-line RPC surface as tools an LLM can call (load /
+save, read pattern + instrument data, send keystrokes, take
+screenshots, etc.). See `ext/mcp-server/README.md` for the install +
+client-config recipe.
+
 ## Importing `.sid` / MIDI / other formats (optional)
 
 The editor opens `.sng` files natively. To import `.sid`, MIDI, or other
