@@ -75,7 +75,95 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--vibrato-margin", type=int, default=0,
                    help="ChiptuneSAK: cents margin for snapping a "
                         "vibrato'd note back to its previous pitch")
+    p.add_argument("--max-channels", type=int, default=0, metavar="N",
+                   help="MIDI/MOD: fold the song down to at most N voices "
+                        "(3 = mono SID, 6 = stereo / dual-SID). 0 (default) "
+                        "keeps every voice, so a 4+ voice tune becomes a "
+                        "6-channel stereo .sng.")
+    p.add_argument("--reduce", choices=("merge", "drop"), default="merge",
+                   help="MIDI/MOD: how --max-channels reduces extra voices — "
+                        "'merge' (default) is pitch-aware: keeps the bass and "
+                        "lead voices on their own channels and folds the "
+                        "closest inner voices together (so a bass-only intro "
+                        "still plays); 'drop' discards the quietest voices "
+                        "(which can silence such an intro).")
+    p.add_argument("--keep-midi-channels", default="", metavar="LIST",
+                   help="MIDI: comma-separated 1-based MIDI channels to keep as "
+                        "dedicated SID voices (e.g. '1,3,4'). Any other channel "
+                        "is folded into the kept voice closest in pitch, so an "
+                        "intro carried by one channel survives. Overrides the "
+                        "automatic --reduce strategy.")
     return p.parse_args()
+
+
+def _fit_channels(song, max_ch, mode, keep=""):
+    """Fold a ChirpSong down to fit GoatTracker's voices.
+
+    GoatTracker has 3 voices mono / 6 stereo. A MIDI/MOD with more voices
+    would otherwise force a 6-channel stereo .sng; this brings it back to
+    a chosen channel count.
+
+    ``keep`` (e.g. "1,3,4") explicitly keeps those 1-based MIDI channels as
+    dedicated voices and folds every other channel into the kept voice
+    closest in pitch — use this when one channel carries an intro the
+    others rest through. When ``keep`` is empty, ``--max-channels`` /
+    ``mode`` decide: 'merge' is pitch-aware (keeps the bass + lead apart,
+    folds the closest inner voices), 'drop' discards the quietest voices.
+    Either way the caller still runs remove_polyphony() afterwards.
+    """
+    # Empty tracks (e.g. the meta/tempo track) never become a voice.
+    song.tracks = [t for t in song.tracks if getattr(t, "notes", None)]
+
+    def _avg_pitch(t):
+        return sum(n.note_num for n in t.notes) / len(t.notes)
+
+    # --- Explicit channel selection -------------------------------------
+    wanted = {int(x) - 1 for x in keep.replace(" ", "").split(",") if x.strip()}
+    if wanted:
+        kept = [t for t in song.tracks if getattr(t, "channel", -1) in wanted]
+        rest = [t for t in song.tracks if getattr(t, "channel", -1) not in wanted]
+        if not kept:
+            sys.stderr.write(
+                f"sid_to_sng: --keep-midi-channels {keep} matched no tracks; "
+                f"falling back to automatic reduction.\n")
+        else:
+            for t in rest:                       # fold each into nearest kept
+                tgt = min(kept, key=lambda k: abs(_avg_pitch(k) - _avg_pitch(t)))
+                tgt.notes.extend(t.notes)
+                tgt.notes.sort(key=lambda n: (n.start_time, -n.note_num))
+            song.tracks = kept
+            sys.stderr.write(
+                f"sid_to_sng: kept MIDI channels {sorted(c + 1 for c in wanted)} "
+                f"as dedicated voices; folded {len(rest)} other voice(s) in.\n")
+            return
+
+    if max_ch <= 0 or len(song.tracks) <= max_ch:
+        return
+
+    if mode == "drop":
+        song.tracks.sort(key=lambda t: len(t.notes), reverse=True)
+        dropped = len(song.tracks) - max_ch
+        del song.tracks[max_ch:]
+        sys.stderr.write(
+            f"sid_to_sng: dropped the {dropped} quietest voice(s) to fit "
+            f"{max_ch} channel(s).\n")
+    else:  # merge — keep bass + lead apart, fold the closest inner voices
+        merged = 0
+        while len(song.tracks) > max_ch:
+            song.tracks.sort(key=_avg_pitch)
+            # adjacent pair (in pitch) with the smallest gap = the two most
+            # similar voices; merging those keeps the outer voices intact.
+            gaps = [(_avg_pitch(song.tracks[i + 1]) - _avg_pitch(song.tracks[i]), i)
+                    for i in range(len(song.tracks) - 1)]
+            _, i = min(gaps, key=lambda g: g[0])
+            a = song.tracks.pop(i + 1)
+            b = song.tracks[i]
+            b.notes.extend(a.notes)
+            b.notes.sort(key=lambda n: (n.start_time, -n.note_num))
+            merged += 1
+        sys.stderr.write(
+            f"sid_to_sng: merged {merged} voice(s) to fit {max_ch} "
+            f"channel(s) (top note wins on overlap).\n")
 
 
 def main() -> int:
@@ -181,6 +269,21 @@ def main() -> int:
         midi = MIDI()
         chirp_song = midi.to_chirp(path)
         chirp_song.quantize_from_note_name('16')
+        # Optionally fold the song down to a target voice count (e.g. 3 for a
+        # mono SID). Default (--max-channels 0) keeps every voice, so a 4+
+        # voice tune becomes a 6-channel stereo .sng.
+        _fit_channels(chirp_song, args.max_channels, args.reduce,
+                      args.keep_midi_channels)
+        # Tracker voices are monophonic, but a MIDI track can hold chords /
+        # overlapping notes (and merging above can add some). to_rchirp()
+        # refuses polyphonic input (ChiptuneSAKPolyphonyError), so flatten
+        # each track to a single voice — remove_polyphony() keeps the top
+        # note of any overlap and leaves the track count unchanged.
+        if chirp_song.is_polyphonic():
+            chirp_song.remove_polyphony()
+            sys.stderr.write(
+                "sid_to_sng: flattened polyphony to monophonic voices "
+                "(kept the top note of any chord).\n")
         rchirp = chirp_song.to_rchirp()
         _normalize_rows(rchirp)
         return rchirp
