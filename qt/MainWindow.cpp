@@ -54,6 +54,7 @@
 #include <QFontMetrics>
 #include <QFrame>
 #include <QMouseEvent>
+#include <QShowEvent>
 #include <QLabel>
 #include <QStyle>
 #include <QInputDialog>
@@ -405,13 +406,25 @@ void MainWindow::buildUi() {
         // rebuilds the tab bar, dropping our icons, so reapply afterwards.
         connect(dock, &QDockWidget::topLevelChanged, this, [this, dock](bool floating) {
             if (floating) {
-                dock->setWindowFlags(Qt::Window
-                                     | Qt::WindowTitleHint
-                                     | Qt::WindowSystemMenuHint
-                                     | Qt::WindowMinMaxButtonsHint
-                                     | Qt::WindowCloseButtonHint);
-                dock->show();
+                // Defer the flag change: topLevelChanged can fire mid-
+                // restoreState() (re-entrant dock machinery), and mutating
+                // window flags + show() inline there can crash. Run it on the
+                // next event-loop pass, once the dock manager has settled.
+                QTimer::singleShot(0, dock, [dock]{
+                    if (!dock->isFloating()) return;   // redocked meanwhile
+                    dock->setWindowFlags(Qt::Window
+                                         | Qt::WindowTitleHint
+                                         | Qt::WindowSystemMenuHint
+                                         | Qt::WindowMinMaxButtonsHint
+                                         | Qt::WindowCloseButtonHint);
+                    dock->show();
+                });
             }
+            QTimer::singleShot(0, this, [this]{ applyDockTabIcons(); });
+        });
+        // restoreState() and any manual re-docking rebuild the tab bar too —
+        // reapply icons + the tear-off filter once the new bar settles.
+        connect(dock, &QDockWidget::dockLocationChanged, this, [this](Qt::DockWidgetArea) {
             QTimer::singleShot(0, this, [this]{ applyDockTabIcons(); });
         });
     }
@@ -1052,28 +1065,44 @@ QWidget *MainWindow::editorView(int idx) const {
     return nullptr;
 }
 
+void MainWindow::showEvent(QShowEvent *e) {
+    QMainWindow::showEvent(e);
+    // The dock tab bar is built lazily — after first show and after the
+    // ctor's restoreState(). That rebuild drops our pictograms, tab indices
+    // and the tear-off filter, so (re)apply them here once the bar exists.
+    // Deferred so the bar is fully materialised before we touch it.
+    QTimer::singleShot(0, this, [this]{ applyDockTabIcons(); });
+}
+
 void MainWindow::applyDockTabIcons() {
     if (!editorArea_) return;
-    // QMainWindow keeps one QTabBar per tabified dock group as a direct child.
+    // findChildren is recursive, so it also turns up tab bars *inside* the
+    // editors (e.g. TablesView's Wave/Pulse/Filter/Speed). Only the dock-group
+    // bars carry our editor titles, so we icon + filter those, and leave the
+    // inner ones untouched.
     for (QTabBar *bar : editorArea_->findChildren<QTabBar*>()) {
-        // Watch the bar for tab tear-off (once — the bar persists across
-        // icon reapplies; guard with a dynamic property).
-        if (!bar->property("tearFilter").toBool()) {
-            bar->installEventFilter(this);
-            bar->setProperty("tearFilter", true);
-        }
         bool touched = false;
         for (int t = 0; t < bar->count(); ++t) {
             for (int i = 0; i < EDITOR_COUNT; ++i) {
                 if (bar->tabText(t) == QLatin1String(EDITOR_TITLE[i])) {
                     bar->setTabIcon(t, editorIcon_[i]);
-                    bar->setTabData(t, i);   // stable editor index for tear-off
+                    // NB: do NOT setTabData here — QMainWindow reserves the
+                    // dock tab bar's tabData to hold the QDockWidget pointer.
+                    // Overwriting it corrupts dock bookkeeping (crashes on
+                    // re-dock / restoreState). Tear-off matches by title.
                     touched = true;
                     break;
                 }
             }
         }
-        if (touched) bar->setIconSize(QSize(18, 18));
+        if (!touched) continue;
+        bar->setIconSize(QSize(18, 18));
+        // Watch this dock-group bar for tab tear-off (once — guard with a
+        // dynamic property since the bar persists across reapplies).
+        if (!bar->property("tearFilter").toBool()) {
+            bar->installEventFilter(this);
+            bar->setProperty("tearFilter", true);
+        }
     }
 }
 
@@ -1915,12 +1944,16 @@ bool MainWindow::eventFilter(QObject *o, QEvent *e) {
         case QEvent::MouseButtonPress: {
             auto *me = static_cast<QMouseEvent*>(e);
             if (me->button() == Qt::LeftButton) {
-                // tabData holds the EDIT_* index (set in applyDockTabIcons),
-                // which survives tab reordering — unlike the tab position.
+                // Identify the dragged editor by tab title (tabData is off
+                // limits — Qt stores the dock pointer there).
                 const int tab = bar->tabAt(me->pos());
-                const QVariant data = (tab >= 0) ? bar->tabData(tab) : QVariant();
                 tearBar_ = bar;
-                tearEditorIdx_ = data.isValid() ? data.toInt() : -1;
+                tearEditorIdx_ = -1;
+                if (tab >= 0) {
+                    const QString text = bar->tabText(tab);
+                    for (int i = 0; i < EDITOR_COUNT; ++i)
+                        if (text == QLatin1String(EDITOR_TITLE[i])) { tearEditorIdx_ = i; break; }
+                }
                 tearArmed_ = tearEditorIdx_ >= 0;
             }
             return false;   // let the bar do its normal select / reorder
@@ -1934,18 +1967,26 @@ bool MainWindow::eventFilter(QObject *o, QEvent *e) {
             const bool out = p.y() < -m || p.y() > bar->height() + m
                           || p.x() < -m || p.x() > bar->width() + m;
             if (!out) return false;
-            // Float the dragged tab's editor at the cursor.
-            QDockWidget *d = editorDock_[tearEditorIdx_];
-            if (d && !d->isFloating()) {
-                const QPoint g = bar->mapToGlobal(me->pos());
-                d->setFloating(true);
-                d->move(g - QPoint(60, 12));
-                d->raise();
-                d->activateWindow();
-                if (d->widget()) d->widget()->setFocus();
-            }
+            // Tear-off detected. setFloating() reparents the dock tree, and
+            // doing that here — inside the tab bar's own mouse-move, while it
+            // holds a mouse grab + internal drag state — crashes. So capture
+            // the target + drop point, end the bar's drag, and perform the
+            // float on the next event-loop pass.
+            const int idx = tearEditorIdx_;
+            const QPoint g = bar->mapToGlobal(me->pos());
             tearArmed_ = false;
             bar->releaseMouse();   // end the bar's internal drag cleanly
+            QTimer::singleShot(0, this, [this, idx, g]{
+                if (idx < 0 || idx >= EDITOR_COUNT) return;
+                QDockWidget *d = editorDock_[idx];
+                if (d && !d->isFloating()) {
+                    d->setFloating(true);
+                    d->move(g - QPoint(60, 12));
+                    d->raise();
+                    d->activateWindow();
+                    if (d->widget()) d->widget()->setFocus();
+                }
+            });
             return true;           // consume so it doesn't also reorder
         }
         case QEvent::MouseButtonRelease:

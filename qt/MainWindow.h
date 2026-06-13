@@ -181,4 +181,5 @@ private:
 
 protected:
     bool eventFilter(QObject *o, QEvent *e) override;
+    void showEvent(QShowEvent *e) override;
 };
