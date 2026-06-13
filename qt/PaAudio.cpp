@@ -6,6 +6,12 @@
 #include <QDebug>
 #include <cstring>
 
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#  include <pthread.h>
+#  include <sched.h>
+#  define GT2_HAVE_POSIX_SCHED 1
+#endif
+
 #include "CoreEvents.h"
 
 extern "C" {
@@ -26,6 +32,36 @@ extern CHN chn[];
 
 PaAudio *PaAudio::self_ = nullptr;
 
+// Promote the calling thread (the PortAudio callback thread) to a realtime
+// scheduling policy. Any SCHED_FIFO priority preempts every normal
+// SCHED_OTHER task, so even a modest value stops a busy desktop from
+// starving the audio callback into an underrun. We pick a low-ish RT
+// priority so we coexist with — rather than starve — the kernel's and the
+// sound server's own RT threads. Best-effort: if the OS denies RT (no
+// RLIMIT_RTPRIO / not in the audio group), we log a one-line hint and carry
+// on at normal priority instead of failing playback.
+static void raiseCallbackThreadPriority() {
+#ifdef GT2_HAVE_POSIX_SCHED
+    const int policy   = SCHED_FIFO;
+    const int loPrio   = sched_get_priority_min(policy);
+    const int hiPrio   = sched_get_priority_max(policy);
+    if (loPrio < 0 || hiPrio < 0) return;
+    // ~a quarter up the range: clearly realtime, but below the high
+    // priorities a sound server (PipeWire/JACK) tends to claim.
+    sched_param sp{};
+    sp.sched_priority = loPrio + (hiPrio - loPrio) / 4;
+    const int rc = pthread_setschedparam(pthread_self(), policy, &sp);
+    if (rc == 0) {
+        qInfo("PaAudio: callback thread -> SCHED_FIFO prio %d", sp.sched_priority);
+    } else {
+        qWarning("PaAudio: could not raise callback thread to realtime "
+                 "(%s). Audio may stutter under load. Grant RLIMIT_RTPRIO "
+                 "(e.g. add your user to the 'audio' group, or set "
+                 "rtprio in /etc/security/limits.conf).", std::strerror(rc));
+    }
+#endif
+}
+
 PaAudio::PaAudio() { self_ = this; }
 PaAudio::~PaAudio() { stop(); if (self_ == this) self_ = nullptr; }
 
@@ -34,6 +70,12 @@ int PaAudio::paCallback(const void * /*in*/, void *out, unsigned long frames,
                         unsigned long /*flags*/, void *user) {
     auto *self = static_cast<PaAudio*>(user);
     short *o = static_cast<short*>(out);
+
+    // First callback on this thread: promote it to realtime. exchange() makes
+    // the one-time setup branch-free on every subsequent (hot) call, and the
+    // syscall happens exactly once, off the steady-state path.
+    if (!self->priorityRaised_.exchange(true, std::memory_order_relaxed))
+        raiseCallbackThreadPriority();
 
     // Hard-fenced by the UI thread? Silence chunk + return — cheaper than
     // stalling the device. The fence is only set during the few ms a
