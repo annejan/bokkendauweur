@@ -908,21 +908,23 @@ void MainWindow::buildUi() {
     });
 
     settingsMenu->addSeparator();
-    auto *audioMenu = settingsMenu->addMenu("&Audio engine");
-    auto *stereoA = audioMenu->addAction("Dual-SID / 6-channel mode");
-    stereoAction_ = stereoA;
-    stereoA->setCheckable(true);
-    stereoA->setChecked(stereo_mode != 0);
-    stereoA->setToolTip("UNCHECKED = single SID, 3 channels (default mono).\n"
-                        "CHECKED   = dual SID, 6 channels.\n"
-                        "Toggle anytime — uncheck to return to single SID.");
-    connect(stereoA, &QAction::toggled, this, &MainWindow::toggleStereoMode);
-    auto *sid2A = audioMenu->addAction("Second SID is 8580 (else 6581)");
-    sid2A->setCheckable(true);
-    sid2A->setChecked(sid2model != 0);
-    sid2A->setToolTip("Pick the second SID's chip model independently of SID1. "
-                      "Only takes effect in stereo mode.");
-    connect(sid2A, &QAction::toggled, this, &MainWindow::toggleSid2Model);
+    auto *sidMenu = settingsMenu->addMenu("&SID config");
+    auto *sidGroup = new QActionGroup(this);   // exclusive single/dual
+    auto *singleA = sidMenu->addAction("&Single SID (3 channels)");
+    singleA->setCheckable(true);
+    singleA->setActionGroup(sidGroup);
+    singleA->setToolTip("One SID — 3 channels (default mono).");
+    auto *dualA = sidMenu->addAction("&Dual SID (6 channels)");
+    dualA->setCheckable(true);
+    dualA->setActionGroup(sidGroup);
+    dualA->setToolTip("Two SIDs — 6 channels (stereo).");
+    (stereo_mode != 0 ? dualA : singleA)->setChecked(true);
+    singleSidAction_ = singleA;
+    stereoAction_    = dualA;   // loadSongFile syncs this pair to the .sng
+    // The group unchecks the sibling automatically; only the action that
+    // turned ON drives the stereo switch.
+    connect(dualA,   &QAction::toggled, this, [this](bool on) { if (on) toggleStereoMode(true);  });
+    connect(singleA, &QAction::toggled, this, [this](bool on) { if (on) toggleStereoMode(false); });
 
     auto *playMenu = menuBar()->addMenu("&Play");
     auto *playA = playMenu->addAction(QString::fromUtf8("⏮  Play from &beginning"));
@@ -1215,12 +1217,13 @@ void MainWindow::loadSongFile(const QString &path) {
     // mid-render while sid_init tears the SID down + rebuilds.
     stereo_mode = (song_channels >= MAX_CHN) ? 1 : 0;
     sid_init((int)mr, sidmodel, ntsc, /*interpolate=*/0, customclockrate, 1);
-    // Keep the Settings ▸ Audio ▸ Dual-SID checkbox in sync with the loaded
-    // song. Block its signal so this doesn't re-enter toggleStereoMode (which
+    // Keep the Settings ▸ SID config radio pair in sync with the loaded song.
+    // Block both signals so this doesn't re-enter toggleStereoMode (which
     // would reseed channels + re-init the SID we just set up).
-    if (stereoAction_) {
-        QSignalBlocker block(stereoAction_);
-        stereoAction_->setChecked(stereo_mode != 0);
+    if (stereoAction_ && singleSidAction_) {
+        QSignalBlocker b1(stereoAction_);
+        QSignalBlocker b2(singleSidAction_);
+        (stereo_mode != 0 ? stereoAction_ : singleSidAction_)->setChecked(true);
     }
     qInfo("load: done patterns=%d instr=%d song_channels=%d stereo=%d",
           highestusedpattern, highestusedinstr, song_channels, stereo_mode);
@@ -2123,6 +2126,14 @@ void MainWindow::toggleStereoMode(bool on) {
     statusStrip_->showMessage(on
         ? "Stereo ON — 6 channels, dual SID"
         : "Stereo OFF — 3 channels, single SID");
+    // Keep the Settings ▸ SID config radio in sync no matter who flipped
+    // stereo (menu, the status-strip SID2 click, etc.). Signal-blocked so
+    // this can't re-enter via the actions' toggled() handlers.
+    if (stereoAction_ && singleSidAction_) {
+        QSignalBlocker b1(stereoAction_);
+        QSignalBlocker b2(singleSidAction_);
+        (on ? stereoAction_ : singleSidAction_)->setChecked(true);
+    }
     refreshAll();
 }
 
