@@ -200,11 +200,52 @@ set(BME_FULL_SRC
     ${SRC_DIR}/bme/bme_kbd.c
 )
 
-# gt2reloc needs only the empty datafile[] symbol; everything else
-# (editstring, resettime, etc.) comes from the SDL files it already links.
+# ---------------------------------------------------------------------------
+# Real C64 playroutine blob (datafile[] / goatdata.c)
+#
+# The relocator reads "player.s" / "altplayer.s" through bme's io_open(), which
+# — once io_openlinkeddatafile(datafile) is called — serves them from the
+# compiled-in datafile[] blob rather than the filesystem. Upstream's Qt port
+# shipped an EMPTY datafile[] stub, so packing died with "COULD NOT OPEN
+# PLAYROUTINE". Here we reproduce the original makefile.common pipeline:
+#   datafile  goattrk2.dat  goattrk2.seq   (bundle player.s + assets -> .dat)
+#   dat2inc   goattrk2.dat  goatdata.c     (emit `unsigned char datafile[]`)
+# and link the generated goatdata.c into gt2reloc.
+# ---------------------------------------------------------------------------
+set(GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated)
+file(MAKE_DIRECTORY ${GEN_DIR})
+
+# Host tools (tiny, self-contained). datafile.c needs bme_end.c for the
+# little-endian fwrite helpers; both only pull in <SDL/SDL_types.h> for Uint32.
+add_executable(gt2_datafile ${SRC_DIR}/bme/datafile.c ${SRC_DIR}/bme/bme_end.c)
+target_include_directories(gt2_datafile PRIVATE ${SRC_DIR}/bme ${SDL_INCLUDE_DIRS})
+target_compile_options(gt2_datafile PRIVATE -fcommon -Wno-write-strings ${SDL_CFLAGS_OTHER})
+
+add_executable(gt2_dat2inc ${SRC_DIR}/bme/dat2inc.c)
+
+# datafile resolves the names in goattrk2.seq (player.s, chargen.bin, ...)
+# relative to its working directory, so run it from src/.
+add_custom_command(
+    OUTPUT ${GEN_DIR}/goatdata.c
+    COMMAND gt2_datafile ${GEN_DIR}/goattrk2.dat goattrk2.seq
+    COMMAND gt2_dat2inc ${GEN_DIR}/goattrk2.dat ${GEN_DIR}/goatdata.c
+    WORKING_DIRECTORY ${SRC_DIR}
+    DEPENDS gt2_datafile gt2_dat2inc
+            ${SRC_DIR}/goattrk2.seq
+            ${SRC_DIR}/player.s ${SRC_DIR}/altplayer.s
+            ${SRC_DIR}/chargen.bin ${SRC_DIR}/palette.bin
+            ${SRC_DIR}/cursor.bin ${SRC_DIR}/goattrk2.bmp
+    COMMENT "Generating goatdata.c (C64 playroutine blob) from goattrk2.seq"
+    VERBATIM
+)
+
+# gt2reloc gets the real datafile[] (goatdata.c) plus the stereo/sid2model
+# flags from gt2reloc_stub.c; everything else (editstring, resettime, ...)
+# comes from the SDL files it already links.
 add_executable(gt2reloc
     ${GT2RELOC_SRC}
     gt2reloc_stub.c
+    ${GEN_DIR}/goatdata.c
     ${RESIDFP_SRC}
     ${ASM_SRC}
     ${BME_FULL_SRC}
