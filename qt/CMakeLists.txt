@@ -4,6 +4,7 @@ project(goattrk2-qt LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
@@ -119,6 +120,7 @@ add_executable(goattrk2-qt
     ${RESIDFP_SRC}
     ${ASM_SRC}
     ${BME_SRC}
+    ${CMAKE_CURRENT_SOURCE_DIR}/app.qrc
 )
 
 target_include_directories(goattrk2-qt PRIVATE

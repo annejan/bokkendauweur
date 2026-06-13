@@ -1,4 +1,5 @@
 #include <QApplication>
+#include <QIcon>
 #include <QTimer>
 #include <QStringList>
 #include <QStyleFactory>
@@ -49,6 +50,9 @@ int main(int argc, char **argv) {
     QApplication::setOrganizationName("goattrk2-qt");
     QApplication::setApplicationName("goattrk2-qt");
     QApplication app(argc, argv);
+    // Taskbar / window-manager / Alt-Tab icon. Embedded via app.qrc so it
+    // resolves regardless of the working directory.
+    app.setWindowIcon(QIcon(":/icons/goat.png"));
     Log::init();
     qInfo("argv: argc=%d", argc);
     for (int i = 0; i < argc; i++) qInfo("  argv[%d]=%s", i, argv[i]);

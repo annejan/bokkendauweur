@@ -40,6 +40,11 @@ private:
     int       sampleRate_ = 0;
     double    sampleAccumF_ = 0.0;
     bool      paInited_ = false;
+    // Set once, from the callback thread itself, the first time it runs — we
+    // promote that thread to a realtime scheduling policy so a busy machine
+    // can't preempt it into an underrun. PortAudio exposes no thread handle,
+    // so self-promotion on first callback is the portable hook.
+    std::atomic<bool> priorityRaised_{false};
 
     static PaAudio *self_;
 };
