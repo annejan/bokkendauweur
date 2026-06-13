@@ -31,7 +31,11 @@
 #include <QAction>
 #include <QShortcut>
 #include <QKeySequence>
-#include <QStackedWidget>
+#include <QTabBar>
+#include <QTabWidget>
+#include <QIcon>
+#include <QPixmap>
+#include <QPainter>
 #include <QLabel>
 #include <QTimer>
 #include <QStandardPaths>
@@ -50,6 +54,7 @@
 #include <QFontMetrics>
 #include <QFrame>
 #include <QMouseEvent>
+#include <QShowEvent>
 #include <QLabel>
 #include <QStyle>
 #include <QInputDialog>
@@ -123,6 +128,19 @@ void readscalatuningfile(void);
 void resetnotenames(void);
 }
 
+namespace {
+constexpr int MAX_RECENT   = 10;              // Open Recent list cap
+constexpr int EDITOR_COUNT = EDIT_NAMES + 1;  // panes EDIT_PATTERN..EDIT_NAMES
+// Single source of truth for the editor tab labels + tooltips. The dock tab
+// text is derived from these, and applyDockTabIcons() / the tear-off handler
+// key off them, so they must stay indexed by EDIT_*.
+const char *const EDITOR_TITLE[EDITOR_COUNT] =
+    { "Pattern", "Order", "Instrument", "Tables", "Songname" };
+const char *const EDITOR_TIP[EDITOR_COUNT] = {
+    "Pattern editor (F5)", "Order / song editor (F6)", "Instrument editor (F7)",
+    "Tables editor (F8)", "Songname editor" };
+} // namespace
+
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     undoStack_ = new QUndoStack(this);
     undoStack_->setUndoLimit(64);
@@ -140,6 +158,17 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     QByteArray ip = s.value("instrpath").toString().toLocal8Bit();
     if (!sp.isEmpty()) std::strncpy(songpath, sp.constData(), MAX_PATHNAME - 1);
     if (!ip.isEmpty()) std::strncpy(instrpath, ip.constData(), MAX_PATHNAME - 1);
+    // Restore the editor dock layout (tab grouping + any torn-off / floated
+    // editors) and the main window geometry from the previous session. Uses
+    // the default app QSettings (org/app = "goattrk2-qt", set in main()) to
+    // sit alongside the editor/* prefs and the recent-files list.
+    QSettings cfg;
+    QByteArray editorLayout = cfg.value("editorLayout").toByteArray();
+    if (editorArea_ && !editorLayout.isEmpty())
+        editorArea_->restoreState(editorLayout);
+    QByteArray mainGeo = cfg.value("mainGeometry").toByteArray();
+    if (!mainGeo.isEmpty())
+        restoreGeometry(mainGeo);
     connect(coreEvents_, &CoreEvents::transportChanged,
             this, &MainWindow::onTransportChanged);
     connect(coreEvents_, &CoreEvents::rowChanged,
@@ -160,6 +189,11 @@ MainWindow::~MainWindow() {
     QSettings s("goattracker2-qt", "goattracker2-qt");
     s.setValue("songpath",  QString::fromLocal8Bit(songpath));
     s.setValue("instrpath", QString::fromLocal8Bit(instrpath));
+    // Persist the editor dock layout + window geometry so torn-off editors
+    // and tab arrangement survive a restart. Default store, matching the ctor.
+    QSettings cfg;
+    if (editorArea_) cfg.setValue("editorLayout", editorArea_->saveState());
+    cfg.setValue("mainGeometry", saveGeometry());
 }
 
 void MainWindow::pauseTimer()  { if (timer_) timer_->stop(); }
@@ -249,25 +283,162 @@ void MainWindow::buildUi() {
     connect(lenUp,   &QToolButton::clicked, this, &MainWindow::growPattern);
 
     pbLay->addStretch(1);
-    centralLay->addWidget(patternBar_);
+    // ---- Editor area: detachable dock tabs -------------------------------
+    // The five editors live inside a nested QMainWindow as tabified
+    // QDockWidgets. Qt gives browser-style tear-off for free: drag a tab out
+    // and it floats as its own top-level window (great for a second monitor);
+    // drag it back onto the tab strip to re-tab. editmode is no longer tied
+    // to one visible page — it FOLLOWS KEYBOARD FOCUS (onFocusChanged), so
+    // whichever editor you click / focus becomes the one the engine edits.
+    // The Mode menu / F5-F8 / Tab cycle still drive editmode via syncStack(),
+    // which now raises (and, if floating, activates) the target dock.
+    editorArea_ = new QMainWindow;
+    editorArea_->setWindowFlags(Qt::Widget);   // behave as a plain child widget
+    editorArea_->setDockNestingEnabled(true);
+    editorArea_->setDockOptions(QMainWindow::AnimatedDocks
+                                | QMainWindow::AllowTabbedDocks
+                                | QMainWindow::AllowNestedDocks);
 
-    stack_ = new QStackedWidget(centralWrap);
-    pattern_    = new PatternView(stack_);
-    order_      = new OrderView(stack_);
-    instrument_ = new InstrumentView(stack_);
-    tables_     = new TablesView(stack_);
-    songName_   = new SongNameView(stack_);
-    stack_->insertWidget(EDIT_PATTERN, pattern_);
-    stack_->insertWidget(EDIT_ORDERLIST, order_);
-    stack_->insertWidget(EDIT_INSTRUMENT, instrument_);
-    stack_->insertWidget(EDIT_TABLES, tables_);
-    stack_->insertWidget(EDIT_NAMES, songName_);
-    // Toolbar only relevant while the pattern editor is active.
-    connect(stack_, &QStackedWidget::currentChanged, this, [this](int idx) {
-        if (patternBar_) patternBar_->setVisible(idx == EDIT_PATTERN);
+    pattern_    = new PatternView(editorArea_);
+    order_      = new OrderView(editorArea_);
+    instrument_ = new InstrumentView(editorArea_);
+    tables_     = new TablesView(editorArea_);
+    songName_   = new SongNameView(editorArea_);
+
+    // Pattern pane bundles its octave / length toolbar so the bar travels
+    // with the pattern editor when the dock is torn off into its own window.
+    auto *patternPane = new QWidget(editorArea_);
+    auto *ppLay = new QVBoxLayout(patternPane);
+    ppLay->setContentsMargins(0, 0, 0, 0);
+    ppLay->setSpacing(0);
+    ppLay->addWidget(patternBar_);
+    ppLay->addWidget(pattern_, 1);
+
+    // Hand-painted pictograms (same set as before) — shown on each dock tab
+    // via the dock's window icon. Painted at 32px, scaled down for hi-dpi.
+    auto makeIcon = [](auto draw) -> QIcon {
+        const int S = 32;
+        QPixmap pm(S, S);
+        pm.fill(Qt::transparent);
+        QPainter p(&pm);
+        p.setRenderHint(QPainter::Antialiasing, true);
+        draw(p, S);
+        p.end();
+        return QIcon(pm);
+    };
+    const QColor ink = Theme::C::text;
+    QIcon (&icons)[5] = editorIcon_;
+    // Pattern / track editor — three vertical lines (note columns).
+    icons[EDIT_PATTERN] = makeIcon([&](QPainter &p, int S) {
+        p.setPen(QPen(ink, 3, Qt::SolidLine, Qt::RoundCap));
+        for (int x : {8, 16, 24}) p.drawLine(x, 6, x, S - 6);
     });
-    patternBar_->setVisible(stack_->currentIndex() == EDIT_PATTERN);
-    centralLay->addWidget(stack_, 1);
+    // Order / song editor — three horizontal lines (sequence rows).
+    icons[EDIT_ORDERLIST] = makeIcon([&](QPainter &p, int S) {
+        p.setPen(QPen(ink, 3, Qt::SolidLine, Qt::RoundCap));
+        for (int y : {8, 16, 24}) p.drawLine(6, y, S - 6, y);
+    });
+    // Instrument editor — a few black-and-white piano keys.
+    icons[EDIT_INSTRUMENT] = makeIcon([&](QPainter &p, int S) {
+        const int x0 = 5, y0 = 7, w = S - 10, h = S - 14;
+        p.setPen(QPen(ink, 1));
+        p.setBrush(Qt::white);
+        p.drawRect(x0, y0, w, h);
+        for (int i = 1; i < 4; ++i) {
+            int x = x0 + i * w / 4;
+            p.drawLine(x, y0, x, y0 + h);
+        }
+        p.setBrush(Qt::black);
+        p.setPen(Qt::NoPen);
+        const int bw = w / 8, bh = h * 3 / 5;
+        for (int i : {1, 2, 3}) {
+            int x = x0 + i * w / 4 - bw / 2;
+            p.drawRect(x, y0, bw, bh);
+        }
+    });
+    // Tables editor — a simple grid/table (2x3 cells).
+    icons[EDIT_TABLES] = makeIcon([&](QPainter &p, int S) {
+        const int x0 = 5, y0 = 6, w = S - 10, h = S - 12;
+        p.setPen(QPen(ink, 2));
+        p.setBrush(Qt::NoBrush);
+        p.drawRect(x0, y0, w, h);
+        p.setPen(QPen(ink, 1.5));
+        p.drawLine(x0 + w / 3,     y0, x0 + w / 3,     y0 + h);
+        p.drawLine(x0 + 2 * w / 3, y0, x0 + 2 * w / 3, y0 + h);
+        p.drawLine(x0, y0 + h / 2, x0 + w, y0 + h / 2);
+    });
+    // Songname editor — a label / luggage tag with a punch hole.
+    icons[EDIT_NAMES] = makeIcon([&](QPainter &p, int S) {
+        p.setPen(QPen(ink, 2, Qt::SolidLine, Qt::FlatCap, Qt::RoundJoin));
+        p.setBrush(Qt::NoBrush);
+        QPolygon tag;
+        tag << QPoint(13, 6) << QPoint(S - 6, 6) << QPoint(S - 6, S - 6)
+            << QPoint(13, S - 6) << QPoint(5, S / 2);
+        p.drawPolygon(tag);
+        p.setBrush(ink);
+        p.drawEllipse(QPoint(12, S / 2), 2, 2);
+    });
+
+    QWidget *panes[EDITOR_COUNT] =
+        { patternPane, order_, instrument_, tables_, songName_ };
+    for (int i = 0; i < EDITOR_COUNT; ++i) {
+        auto *dock = new QDockWidget(EDITOR_TITLE[i], editorArea_);
+        // Stable objectName so QMainWindow::saveState / restoreState can
+        // round-trip the dock layout (incl. which editors were floated) on
+        // the next launch.
+        dock->setObjectName(QStringLiteral("editorDock%1").arg(i));
+        dock->setWidget(panes[i]);
+        dock->setWindowIcon(icons[i]);
+        dock->setToolTip(EDITOR_TIP[i]);
+        // No close box — an editor must always exist — but free to float /
+        // move so the user can pull it onto a second monitor.
+        dock->setFeatures(QDockWidget::DockWidgetMovable
+                          | QDockWidget::DockWidgetFloatable);
+        dock->setAllowedAreas(Qt::AllDockWidgetAreas);
+        editorArea_->addDockWidget(Qt::TopDockWidgetArea, dock);
+        if (i > 0) editorArea_->tabifyDockWidget(editorDock_[0], dock);
+        editorDock_[i] = dock;
+        dock->installEventFilter(this);   // intercept the float close button
+        // When torn off, promote the dock to a real top-level window so it
+        // gets native decorations (title bar, min/max, resize border). The
+        // WM then owns the title bar — so drag-back can't redock; the native
+        // close button does instead (see eventFilter). Re-docking also
+        // rebuilds the tab bar, dropping our icons, so reapply afterwards.
+        connect(dock, &QDockWidget::topLevelChanged, this, [this, dock](bool floating) {
+            if (floating) {
+                // Defer the flag change: topLevelChanged can fire mid-
+                // restoreState() (re-entrant dock machinery), and mutating
+                // window flags + show() inline there can crash. Run it on the
+                // next event-loop pass, once the dock manager has settled.
+                QTimer::singleShot(0, dock, [dock]{
+                    if (!dock->isFloating()) return;   // redocked meanwhile
+                    dock->setWindowFlags(Qt::Window
+                                         | Qt::WindowTitleHint
+                                         | Qt::WindowSystemMenuHint
+                                         | Qt::WindowMinMaxButtonsHint
+                                         | Qt::WindowCloseButtonHint);
+                    dock->show();
+                });
+            }
+            QTimer::singleShot(0, this, [this]{ applyDockTabIcons(); });
+        });
+        // restoreState() and any manual re-docking rebuild the tab bar too —
+        // reapply icons + the tear-off filter once the new bar settles.
+        connect(dock, &QDockWidget::dockLocationChanged, this, [this](Qt::DockWidgetArea) {
+            QTimer::singleShot(0, this, [this]{ applyDockTabIcons(); });
+        });
+    }
+    editorArea_->setTabPosition(Qt::AllDockWidgetAreas, QTabWidget::North);
+    editorDock_[EDIT_PATTERN]->raise();   // pattern editor up front initially
+    // The tab bar isn't materialised until the dock area lays out — set the
+    // pictograms on the next event-loop pass once it exists.
+    QTimer::singleShot(0, this, [this]{ applyDockTabIcons(); });
+
+    centralLay->addWidget(editorArea_, 1);
+
+    // editmode follows focus across docked + floating editors.
+    connect(qApp, &QApplication::focusChanged,
+            this, &MainWindow::onFocusChanged);
 
     statusStrip_ = new StatusStrip(centralWrap);
     centralLay->addWidget(statusStrip_);
@@ -312,16 +483,14 @@ void MainWindow::buildUi() {
     connect(instrument_, &InstrumentView::edited, this, [this]() {
         // The InstrumentView '→ table' jump buttons set editmode = 3
         // (EDIT_TABLES) and emit edited(); without syncStack the editmode
-        // change never reaches the QStackedWidget and the user just sees
-        // a refresh of the instrument editor.
+        // change never raises the Tables dock and the user just sees a
+        // refresh of the instrument editor.
         //
-        // syncStack() force-focuses the stack page, which stole focus off
-        // the active instrument-name QLineEdit every keystroke (the
-        // QLineEdit was a descendant of the stack page, so the stack
-        // page's setFocus() bounced focus to the first focusable child
-        // — the Apply button). Skip the syncStack when the editmode
-        // didn't actually change.
-        if (stack_->currentIndex() != editmode) {
+        // syncStack() force-focuses the target editor, which would steal
+        // focus off the active instrument-name QLineEdit on every keystroke.
+        // Only resync when the target editor (editmode) isn't already the
+        // visible one — i.e. a '→ table' jump that actually switched editors.
+        if (QWidget *v = editorView(editmode); v && !v->isVisible()) {
             syncStack();
         }
         refreshAll();
@@ -438,6 +607,9 @@ void MainWindow::buildUi() {
     auto *openA = fileMenu->addAction("&Open .sng…");
     openA->setShortcut(Qt::CTRL | Qt::Key_O);
     connect(openA, &QAction::triggered, this, &MainWindow::openSong);
+    recentMenu_ = fileMenu->addMenu("Open &Recent");
+    loadRecentFiles();
+    updateRecentMenu();
     auto *mergeA = fileMenu->addAction("&Merge .sng…");
     mergeA->setShortcut(Qt::CTRL | Qt::Key_M);
     connect(mergeA, &QAction::triggered, this, &MainWindow::mergeSong);
@@ -865,13 +1037,10 @@ void MainWindow::buildUi() {
 
     addSpacer();
 
-    // Mode group
-    tb->addAction(modeMenu->actions().at(0));
-    tb->addAction(modeMenu->actions().at(1));
-    tb->addAction(modeMenu->actions().at(2));
-    tb->addAction(modeMenu->actions().at(3));
-
-    addSpacer();
+    // Editor-mode switching lives on the QTabBar above the editor stack
+    // (see buildUi) — the old "Pattern editor / Order/song editor / …"
+    // toolbar buttons were a duplicate of those tabs and have been removed.
+    // F5-F8, Tab/Shift-Tab and the Mode menu still drive editmode.
 
     // Follow-play stays on the toolbar (frequently toggled); the two dock
     // toggles ("Order map" / "Instruments") live in the View menu only, to
@@ -885,17 +1054,90 @@ void MainWindow::buildUi() {
     syncStack();
 }
 
+QWidget *MainWindow::editorView(int idx) const {
+    switch (idx) {
+        case EDIT_PATTERN:    return pattern_;
+        case EDIT_ORDERLIST:  return order_;
+        case EDIT_INSTRUMENT: return instrument_;
+        case EDIT_TABLES:     return tables_;
+        case EDIT_NAMES:      return songName_;
+    }
+    return nullptr;
+}
+
+void MainWindow::showEvent(QShowEvent *e) {
+    QMainWindow::showEvent(e);
+    // The dock tab bar is built lazily — after first show and after the
+    // ctor's restoreState(). That rebuild drops our pictograms, tab indices
+    // and the tear-off filter, so (re)apply them here once the bar exists.
+    // Deferred so the bar is fully materialised before we touch it.
+    QTimer::singleShot(0, this, [this]{ applyDockTabIcons(); });
+}
+
+void MainWindow::applyDockTabIcons() {
+    if (!editorArea_) return;
+    // findChildren is recursive, so it also turns up tab bars *inside* the
+    // editors (e.g. TablesView's Wave/Pulse/Filter/Speed). Only the dock-group
+    // bars carry our editor titles, so we icon + filter those, and leave the
+    // inner ones untouched.
+    for (QTabBar *bar : editorArea_->findChildren<QTabBar*>()) {
+        bool touched = false;
+        for (int t = 0; t < bar->count(); ++t) {
+            for (int i = 0; i < EDITOR_COUNT; ++i) {
+                if (bar->tabText(t) == QLatin1String(EDITOR_TITLE[i])) {
+                    bar->setTabIcon(t, editorIcon_[i]);
+                    // NB: do NOT setTabData here — QMainWindow reserves the
+                    // dock tab bar's tabData to hold the QDockWidget pointer.
+                    // Overwriting it corrupts dock bookkeeping (crashes on
+                    // re-dock / restoreState). Tear-off matches by title.
+                    touched = true;
+                    break;
+                }
+            }
+        }
+        if (!touched) continue;
+        bar->setIconSize(QSize(18, 18));
+        // Watch this dock-group bar for tab tear-off (once — guard with a
+        // dynamic property since the bar persists across reapplies).
+        if (!bar->property("tearFilter").toBool()) {
+            bar->installEventFilter(this);
+            bar->setProperty("tearFilter", true);
+        }
+    }
+}
+
 void MainWindow::syncStack() {
     if (editmode < 0 || editmode > EDIT_NAMES) editmode = EDIT_PATTERN;
-    stack_->setCurrentIndex(editmode);
-    QWidget *w = stack_->currentWidget();
+    // Raise the target editor's dock to the front of its tab group (and, if
+    // the user tore it off onto another monitor, pop that window forward).
+    if (QDockWidget *d = editorDock_[editmode]) {
+        d->show();
+        d->raise();
+        if (d->isFloating()) d->activateWindow();
+    }
+    QWidget *w = editorView(editmode);
     if (w) {
         w->setFocus();
-        // Accessibility: announce the editor screen now active. This is the
-        // single funnel point for F5-F8, Tab/Shift-Tab and the Mode menu, so
-        // a blind user always knows which editor they landed on. Reuses the
-        // view's accessibleName ("Pattern editor", "Order and song editor", …).
+        // Accessibility: announce the editor now active. Single funnel point
+        // for F5-F8, Tab/Shift-Tab and the Mode menu, so a blind user always
+        // knows which editor they landed on. Reuses the view's accessibleName
+        // ("Pattern editor", "Order and song editor", …).
         Speech::instance().say(w->accessibleName(), Speech::Priority::Status);
+    }
+}
+
+// editmode follows keyboard focus: clicking into (or Tab-ing through) any
+// editor — docked or floated onto a second monitor — makes it the one the
+// engine edits. Walks up from the freshly-focused widget to find which of
+// the five editor views (if any) owns it.
+void MainWindow::onFocusChanged(QWidget * /*old*/, QWidget *now) {
+    if (!now) return;
+    for (int i = 0; i < EDITOR_COUNT; ++i) {
+        QWidget *v = editorView(i);
+        if (v && (v == now || v->isAncestorOf(now))) {
+            if (editmode != i) { editmode = i; refreshAll(); }
+            return;
+        }
     }
 }
 
@@ -982,6 +1224,76 @@ void MainWindow::loadSongFile(const QString &path) {
     refreshAll();
     if (auto *w = activeEditorWidget()) w->update();
     statusStrip_->showMessage(QString("Loaded: %1").arg(path));
+    addRecentFile(path);
+}
+
+// --- Open Recent ----------------------------------------------------------
+// Persist the last 10 user-opened .sng files. Only native .sng paths land
+// here — .sid / .mid / .mod imports stage through a temp .sng (see
+// loadSidFile) whose path we don't want to remember, so temp-dir paths and
+// non-.sng extensions are filtered out.
+void MainWindow::addRecentFile(const QString &path) {
+    if (!path.endsWith(".sng", Qt::CaseInsensitive)) return;
+    QFileInfo fi(path);
+    QString abs = fi.absoluteFilePath();
+    if (abs.startsWith(QDir::tempPath(), Qt::CaseInsensitive)) return;
+    // De-dupe (case-insensitive on the absolute path), newest first, cap 10.
+    recentFiles_.removeIf([&](const QString &p) {
+        return p.compare(abs, Qt::CaseInsensitive) == 0;
+    });
+    recentFiles_.prepend(abs);
+    while (recentFiles_.size() > MAX_RECENT) recentFiles_.removeLast();
+    saveRecentFiles();
+    updateRecentMenu();
+}
+
+void MainWindow::updateRecentMenu() {
+    if (!recentMenu_) return;
+    recentMenu_->clear();
+    if (recentFiles_.isEmpty()) {
+        QAction *none = recentMenu_->addAction("(no recent files)");
+        none->setEnabled(false);
+        return;
+    }
+    int i = 1;
+    for (const QString &path : recentFiles_) {
+        // &1..&9 mnemonics for the first nine; show the file name, full path
+        // in the tooltip. The 10th item just shows its name (no mnemonic).
+        const QString name = QFileInfo(path).fileName();
+        const QString label = (i <= 9) ? QStringLiteral("&%1  %2").arg(i).arg(name)
+                                       : name;
+        QAction *a = recentMenu_->addAction(label);
+        a->setToolTip(path);
+        connect(a, &QAction::triggered, this, [this, path]() {
+            if (!QFileInfo::exists(path)) {
+                statusStrip_->showMessage(QString("Missing: %1").arg(path));
+                recentFiles_.removeAll(path);
+                saveRecentFiles();
+                updateRecentMenu();
+                return;
+            }
+            loadSongFile(path);
+        });
+        ++i;
+    }
+    recentMenu_->addSeparator();
+    QAction *clear = recentMenu_->addAction("&Clear Recent");
+    connect(clear, &QAction::triggered, this, [this]() {
+        recentFiles_.clear();
+        saveRecentFiles();
+        updateRecentMenu();
+    });
+}
+
+void MainWindow::loadRecentFiles() {
+    QSettings s;
+    recentFiles_ = s.value("recentFiles").toStringList();
+    while (recentFiles_.size() > MAX_RECENT) recentFiles_.removeLast();
+}
+
+void MainWindow::saveRecentFiles() {
+    QSettings s;
+    s.setValue("recentFiles", recentFiles_);
 }
 
 void MainWindow::newSong() {
@@ -1612,6 +1924,81 @@ void MainWindow::growPattern() {
 }
 
 bool MainWindow::eventFilter(QObject *o, QEvent *e) {
+    // A torn-off editor floats as a native window with a close button. Since
+    // its WM-owned title bar can't redock by dragging, the close button snaps
+    // it back into the tab group instead of hiding it (editors always exist).
+    if (auto *d = qobject_cast<QDockWidget*>(o)) {
+        if (e->type() == QEvent::Close && d->isFloating()) {
+            e->ignore();
+            d->setFloating(false);
+            return true;
+        }
+        return QMainWindow::eventFilter(o, e);
+    }
+
+    // Tab tear-off: drag a dock tab off its strip -> float that editor into
+    // its own window (browser-style). Native QTabBar drag only reorders, so
+    // we bridge to QDockWidget::setFloating() once the cursor leaves the bar.
+    if (auto *bar = qobject_cast<QTabBar*>(o)) {
+        switch (e->type()) {
+        case QEvent::MouseButtonPress: {
+            auto *me = static_cast<QMouseEvent*>(e);
+            if (me->button() == Qt::LeftButton) {
+                // Identify the dragged editor by tab title (tabData is off
+                // limits — Qt stores the dock pointer there).
+                const int tab = bar->tabAt(me->pos());
+                tearBar_ = bar;
+                tearEditorIdx_ = -1;
+                if (tab >= 0) {
+                    const QString text = bar->tabText(tab);
+                    for (int i = 0; i < EDITOR_COUNT; ++i)
+                        if (text == QLatin1String(EDITOR_TITLE[i])) { tearEditorIdx_ = i; break; }
+                }
+                tearArmed_ = tearEditorIdx_ >= 0;
+            }
+            return false;   // let the bar do its normal select / reorder
+        }
+        case QEvent::MouseMove: {
+            if (!tearArmed_ || bar != tearBar_) return false;
+            auto *me = static_cast<QMouseEvent*>(e);
+            if (!(me->buttons() & Qt::LeftButton)) return false;
+            const int m = 26;   // px the cursor must leave the strip by
+            const QPoint p = me->pos();
+            const bool out = p.y() < -m || p.y() > bar->height() + m
+                          || p.x() < -m || p.x() > bar->width() + m;
+            if (!out) return false;
+            // Tear-off detected. setFloating() reparents the dock tree, and
+            // doing that here — inside the tab bar's own mouse-move, while it
+            // holds a mouse grab + internal drag state — crashes. So capture
+            // the target + drop point, end the bar's drag, and perform the
+            // float on the next event-loop pass.
+            const int idx = tearEditorIdx_;
+            const QPoint g = bar->mapToGlobal(me->pos());
+            tearArmed_ = false;
+            bar->releaseMouse();   // end the bar's internal drag cleanly
+            QTimer::singleShot(0, this, [this, idx, g]{
+                if (idx < 0 || idx >= EDITOR_COUNT) return;
+                QDockWidget *d = editorDock_[idx];
+                if (d && !d->isFloating()) {
+                    d->setFloating(true);
+                    d->move(g - QPoint(60, 12));
+                    d->raise();
+                    d->activateWindow();
+                    if (d->widget()) d->widget()->setFocus();
+                }
+            });
+            return true;           // consume so it doesn't also reorder
+        }
+        case QEvent::MouseButtonRelease:
+            tearArmed_ = false;
+            tearBar_ = nullptr;
+            return false;
+        default:
+            break;
+        }
+        return QMainWindow::eventFilter(o, e);
+    }
+
     // Right-click on the Octave [+] button lowers — gives the user the
     // 'left = up, right = down' affordance they asked for on the same
     // step button, without losing the explicit [−] / [+] pair.
@@ -1804,7 +2191,7 @@ void MainWindow::toggleFollowPlay() {
 }
 
 QWidget *MainWindow::activeEditorWidget() const {
-    return stack_ ? stack_->currentWidget() : nullptr;
+    return editorView(editmode);
 }
 
 void MainWindow::tick() {
@@ -1824,7 +2211,7 @@ void MainWindow::tick() {
     // onOrderPosChanged / onTransportChanged). The timer only repaints the
     // pattern grid while STOPPED, so editor edits + cursor moves stay
     // responsive without a playback in progress.
-    if (!isplaying() && stack_->currentIndex() == EDIT_PATTERN)
+    if (!isplaying() && pattern_->isVisible())
         pattern_->refresh();
 
     statusStrip_->refresh();
@@ -1845,7 +2232,7 @@ void MainWindow::onTransportChanged(bool playing) {
     }
     // Repaint once on the edge so the starting / final position and the
     // play-row highlight (or its clearing on stop) show immediately.
-    if (stack_->currentIndex() == EDIT_PATTERN) pattern_->refresh();
+    if (pattern_->isVisible()) pattern_->refresh();
     if (orderMap_) orderMap_->refresh();
     // Accessibility: announce playback start. The stop / pause side already
     // goes through statusStrip_->showMessage() (which now also speaks), so we
@@ -1854,7 +2241,7 @@ void MainWindow::onTransportChanged(bool playing) {
 }
 
 void MainWindow::onPlayRowChanged() {
-    if (stack_->currentIndex() == EDIT_PATTERN) pattern_->refresh();
+    if (pattern_->isVisible()) pattern_->refresh();
 }
 
 void MainWindow::onOrderPosChanged() {

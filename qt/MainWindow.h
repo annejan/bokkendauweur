@@ -1,6 +1,8 @@
 #pragma once
 #include <QMainWindow>
 #include <QByteArray>
+#include <QStringList>
+#include <QIcon>
 
 class PatternView;
 class OrderView;
@@ -10,12 +12,13 @@ class SongNameView;
 class OrderMiniMap;
 class InstrumentQuickList;
 class StatusStrip;
-class QStackedWidget;
+class QTabBar;
 class QWidget;
 class QLabel;
 class QTimer;
 class QDockWidget;
 class QUndoStack;
+class QMenu;
 class CoreEvents;
 
 class MainWindow : public QMainWindow {
@@ -72,6 +75,8 @@ private slots:
     void cycleMultiplier();
     void toggleFollowPlay();
     void cycleEditMode(bool backwards = false);
+    // editmode follows keyboard focus across docked + floating editors.
+    void onFocusChanged(QWidget *old, QWidget *now);
     void tick();
 
     // CoreEvents (audio-thread) notification handlers — replace per-frame
@@ -111,7 +116,23 @@ private:
     InstrumentView *instrument_ = nullptr;
     TablesView *tables_ = nullptr;
     SongNameView *songName_ = nullptr;
-    QStackedWidget *stack_ = nullptr;
+    // Editor area: a nested QMainWindow whose five editor QDockWidgets can be
+    // torn off into their own top-level windows (multi-monitor) and dragged
+    // back to re-tab. editorDock_ is indexed by EDIT_* (0..4).
+    QMainWindow *editorArea_ = nullptr;
+    QDockWidget *editorDock_[5] = {};
+    QIcon editorIcon_[5];           // pictograms, also pushed onto the dock tabs
+    // Qt's tabified-dock QTabBar ignores QDockWidget::windowIcon(), so we set
+    // the pictograms on the internal tab bar(s) directly — and reapply after
+    // any float / re-dock rebuilds it.
+    void applyDockTabIcons();
+
+    // Browser-style tab tear-off: dragging a dock tab off the strip floats it
+    // into its own window. Qt's native tab drag only reorders, so we watch the
+    // dock-area QTabBar(s) and call setFloating() once the cursor leaves it.
+    QTabBar *tearBar_ = nullptr;    // tab bar the current drag started on
+    int      tearEditorIdx_ = -1;   // EDIT_* index of the dragged tab (-1 = none)
+    bool     tearArmed_ = false;
     OrderMiniMap *orderMap_ = nullptr;
     InstrumentQuickList *insQuick_ = nullptr;
     QDockWidget *orderMapDock_ = nullptr;
@@ -143,10 +164,22 @@ private:
     void buildUi();
     void refreshAll();
     void syncStack();
+    // Maps an EDIT_* index to its editor view widget (pattern_, order_, …).
+    QWidget *editorView(int idx) const;
+
+    // "Open Recent" submenu — last 10 user-opened .sng files, persisted in
+    // QSettings("recentFiles") so the list survives restarts.
+    QMenu *recentMenu_ = nullptr;
+    QStringList recentFiles_;
+    void addRecentFile(const QString &path);
+    void updateRecentMenu();
+    void loadRecentFiles();
+    void saveRecentFiles();
 
     void shrinkPattern();
     void growPattern();
 
 protected:
     bool eventFilter(QObject *o, QEvent *e) override;
+    void showEvent(QShowEvent *e) override;
 };
