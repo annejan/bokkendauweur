@@ -526,11 +526,13 @@ void MainWindow::buildUi() {
         "Click to move the cursor; Ctrl+click moves only the clicked channel.");
     omLay->addWidget(orderMap_, 1);
     orderMapDock_->setWidget(omWrap);
-    // No DockWidgetFloatable: the float / detach button in the dock title
-    // bar (the [↗] icon Qt draws by default) confused users into thinking
-    // it was a 'collapse' button. The Close / X is enough for show / hide.
+    // Detachable into its own window: drag the dock title bar out to float it
+    // (Qt keeps the title bar, so it resizes and can be dragged back onto an
+    // edge to re-dock); the [X] still hides it.
+    orderMapDock_->setObjectName(QStringLiteral("orderMapDock"));
     orderMapDock_->setFeatures(QDockWidget::DockWidgetClosable
-                              | QDockWidget::DockWidgetMovable);
+                              | QDockWidget::DockWidgetMovable
+                              | QDockWidget::DockWidgetFloatable);
     addDockWidget(Qt::LeftDockWidgetArea, orderMapDock_);
     connect(omToggle, &QToolButton::toggled, this, [this, omToggle](bool on) {
         orderMap_->setSelectAllChannels(on);
@@ -592,8 +594,11 @@ void MainWindow::buildUi() {
                     pattern_->refresh();
                 });
     }
+    // Detachable into its own window — same as the Order map dock above.
+    insQuickDock_->setObjectName(QStringLiteral("instrumentsDock"));
     insQuickDock_->setFeatures(QDockWidget::DockWidgetClosable
-                              | QDockWidget::DockWidgetMovable);
+                              | QDockWidget::DockWidgetMovable
+                              | QDockWidget::DockWidgetFloatable);
     addDockWidget(Qt::RightDockWidgetArea, insQuickDock_);
     connect(insQuick_, &InstrumentQuickList::instrumentChosen, this, &MainWindow::refreshAll);
 
@@ -1464,7 +1469,10 @@ void MainWindow::showAbout() {
     QMessageBox box(this);
     box.setWindowTitle("About GoatTracker Qt");
     box.setTextFormat(Qt::RichText);
-    box.setIconPixmap(QPixmap());
+    // GoatTracker Qt logo, scaled to a tidy dialog size.
+    box.setIconPixmap(QPixmap(":/icons/goat.png")
+                          .scaled(96, 96, Qt::KeepAspectRatio,
+                                  Qt::SmoothTransformation));
     box.setText(
         "<h2>GoatTracker 2 — Qt edition</h2>"
         "<p>Native Qt6 frontend for the Commodore 64 SID chip tracker.</p>");
