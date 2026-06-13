@@ -12,7 +12,7 @@ jobs:
     name: Linux (x86_64)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install dependencies
         run: |
@@ -34,7 +34,7 @@ jobs:
           cp qt/build/goattrk2-qt dist/
           cp -r examples dist/examples
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: goattracker2-qt-linux-x86_64
           path: dist/
@@ -44,7 +44,7 @@ jobs:
     name: macOS (arm64)
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install dependencies
         run: brew install cmake ninja pkg-config qt6 sdl12-compat jack portaudio
@@ -73,7 +73,7 @@ jobs:
           cp qt/build/goattrk2-qt dist/
           cp -r examples dist/examples
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: goattracker2-qt-macos-arm64
           path: dist/
@@ -86,7 +86,7 @@ jobs:
       run:
         shell: msys2 {0}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: msys2/setup-msys2@v2
         with:
@@ -122,7 +122,7 @@ jobs:
             cp -u "$dll" dist/ 2>/dev/null || true
           done
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: goattracker2-qt-windows-x86_64
           path: dist/
