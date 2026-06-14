@@ -61,13 +61,25 @@ public:
         a_ = a; d_ = d; s_ = s; r_ = r;
         update();
     }
-    // Live amplitude during playback, 0..255. Anything > 0 enables the
-    // moving-bar marker; 0 disables it (and the parent will also skip
-    // calling update() to save frames).
+    // Live envelope amplitude during playback, 0..255. We don't plot this as
+    // a level — instead we infer which ADSR *stage* the note is in from the
+    // amplitude trajectory and sweep a playhead through that stage's segment
+    // of the drawn envelope, so the marker tracks attack → decay → sustain →
+    // release (and restarts on retrigger) like a frame progress bar.
     void setLiveLevel(int level) {
-        if (level == liveLevel_) return;
+        const int prev = liveLevel_;
+        const int sus  = s_ * 17;     // SID sustain amplitude (nibble * $11)
+        const int T    = 3;           // hysteresis against sampling jitter
+        Phase ph;
+        if (level <= 2)                 ph = P_IDLE;
+        else if (level - prev > T)      ph = P_ATTACK;   // rising
+        else if (level > sus + T)       ph = P_DECAY;    // above sustain, falling
+        else if (prev - level > T)      ph = P_RELEASE;  // falling at/below sustain
+        else                            ph = P_SUSTAIN;  // steady near sustain
+        const bool changed = (level != liveLevel_) || (ph != phase_);
         liveLevel_ = level;
-        update();
+        phase_ = ph;
+        if (changed) update();
     }
 
 signals:
@@ -109,16 +121,25 @@ protected:
         handle(p2_, dragPoint_ == 2);
         handle(p4_, dragPoint_ == 4);
 
-        // Moving-bar marker showing live envelope amplitude during
-        // playback. Horizontal position scales with current level
-        // relative to the envelope peak (255). The marker is suppressed
-        // when liveLevel_ == 0 (gate off / silent) so the idle UI looks
-        // exactly like it always did.
-        if (liveLevel_ > 0) {
-            int span = p4_.x() - p0_.x();
-            int barX = p0_.x() + (liveLevel_ * span) / 255;
-            if (barX < p0_.x()) barX = p0_.x();
-            if (barX > p4_.x()) barX = p4_.x();
+        // Playhead marker — sweeps through the ADSR stages following the drawn
+        // envelope. The stage comes from setLiveLevel()'s phase inference; the
+        // position within the stage is interpolated from the live amplitude.
+        // Suppressed when idle (gate off / silent) so the idle UI is unchanged.
+        if (phase_ != P_IDLE && liveLevel_ > 0) {
+            const int sus = s_ * 17;
+            QPoint a = p0_, b = p1_;
+            double t = 0.0;
+            switch (phase_) {
+            case P_ATTACK:  a = p0_; b = p1_; t = liveLevel_ / 255.0; break;
+            case P_DECAY:   a = p1_; b = p2_;
+                            t = (255 - liveLevel_) / double(qMax(1, 255 - sus)); break;
+            case P_SUSTAIN: a = p2_; b = p3_; t = 0.0; break;  // hold at sustain start
+            case P_RELEASE: a = p3_; b = p4_;
+                            t = (sus - liveLevel_) / double(qMax(1, sus)); break;
+            default: break;
+            }
+            t = qBound(0.0, t, 1.0);
+            int barX = a.x() + int((b.x() - a.x()) * t);
             QColor bar = Theme::C::playRow;
             bar.setAlpha(220);
             p.setPen(QPen(bar, 2));
@@ -247,6 +268,8 @@ private:
 
     int a_ = 0, d_ = 0, s_ = 0, r_ = 0;
     int liveLevel_ = 0;
+    enum Phase { P_IDLE, P_ATTACK, P_DECAY, P_SUSTAIN, P_RELEASE };
+    Phase phase_ = P_IDLE;
     int dragPoint_ = 0; // 0 = none, 1 = p1, 2 = p2, 4 = p4
 
     // Cached geometry from the last computeGeometry() call. paintEvent /
@@ -756,29 +779,26 @@ void InstrumentView::hideEvent(QHideEvent *e) {
 }
 
 void InstrumentView::tickPlayback() {
-    // Pull the live envelope level for the channel the instrument
-    // editor is bound to. sid_getlevels returns the SID envelope
-    // generator output (0..255), same source used by PatternView's
-    // VU bar — so this driver stays consistent with what the rest of
-    // the UI reads as 'is the channel sounding'.
+    // sid_getlevels returns the SID envelope generator output (0..255) per
+    // channel — same source as PatternView's VU bar. Reflect ONLY the
+    // instrument currently open in the editor (einum): pick the loudest
+    // channel that is actually sounding einum. If none is, the preview goes
+    // idle, so unrelated instruments playing on other channels (or this
+    // channel) no longer drive the moving bar / wavetable highlight.
     unsigned char levels[MAX_CHN] = {0};
     sid_getlevels(levels);
-    int ch = (epchn >= 0 && epchn < MAX_CHN) ? epchn : 0;
-    int level = levels[ch];
-
-    // ADSR moving bar — only repaint when transitioning to/from
-    // non-zero, or while non-zero. AdsrPreview::setLiveLevel already
-    // short-circuits same-value calls, but skipping it entirely when
-    // both old and new are 0 saves a function-call+compare per frame.
-    if (level != 0 || adsr_) {
-        adsr_->setLiveLevel(level);
+    int level = 0, step = 0;
+    for (int c = 0; c < MAX_CHN; c++) {
+        if (chn[c].instr != einum) continue;
+        if (levels[c] >= level) {
+            level = levels[c];
+            step  = chn[c].ptr[WTBL];   // 1-based wavetable row, 0 = idle
+        }
     }
 
-    // Wavetable highlight — chn[c].ptr[WTBL] is the 1-based row of the
-    // current wavetable step (0 = idle). setActiveStep no-ops when the
-    // value matches, so when the engine sits on the same step we draw
-    // zero extra frames.
-    int step = chn[ch].ptr[WTBL];
+    // setLiveLevel / setActiveStep both short-circuit same-value calls, so an
+    // idle (or unselected) instrument costs zero repaints.
+    adsr_->setLiveLevel(level);
     wavePrev_->setActiveStep(step);
 }
 
