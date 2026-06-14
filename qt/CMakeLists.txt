@@ -92,6 +92,7 @@ set(QT_SRC
     PatternView.cpp
     OrderView.cpp
     InstrumentView.cpp
+    InstrumentTrace.cpp
     TablesView.cpp
     SongNameView.cpp
     OrderMiniMap.cpp
