@@ -1,4 +1,5 @@
 #include "InstrumentView.h"
+#include "InstrumentTrace.h"
 #include "Theme.h"
 #include "UndoStack.h"
 
@@ -696,6 +697,15 @@ InstrumentView::InstrumentView(QWidget *parent) : QWidget(parent) {
     wavePrev_->setMinimumHeight(40);
     right->addWidget(wavePrev_);
 
+    // Register-trace graph: how the wave / pulse / filter tables drive the SID
+    // registers frame by frame (below the wavetable program, per the design).
+    auto *regHdr = new QLabel("Register traces", this);
+    regHdr->setFont(eh);
+    right->addWidget(regHdr);
+    regGraph_ = new RegisterGraphView(this);
+    regGraph_->setAccessibleName("Register trace graph");
+    right->addWidget(regGraph_);
+
     // Compact summary card — fits in its own bordered frame, kept short.
     summary_ = new QLabel(this);
     summary_->setWordWrap(true);
@@ -915,6 +925,9 @@ void InstrumentView::refresh() {
         clearDirtyChrome(applyBtn_);
     }
     readFromGlobals();
+    // Recompute the register-trace graph for the now-current instrument /
+    // tables. Cheap deterministic walk, so refreshing every time is fine.
+    if (regGraph_) regGraph_->setInstrument(einum);
     updating_ = false;
 }
 

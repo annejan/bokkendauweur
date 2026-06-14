@@ -52,6 +52,7 @@ private:
     class QTimer *playbackTimer_ = nullptr; // 33 Hz monitor for live previews
     AdsrPreview *adsr_;
     WavetablePreview *wavePrev_;
+    class RegisterGraphView *regGraph_ = nullptr;
     QLabel *summary_;
     bool updating_ = false;
 
