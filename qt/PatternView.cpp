@@ -230,6 +230,55 @@ void PatternView::tickScope() {
     viewport()->update();
 }
 
+// Decode a GoatTracker pattern command (nibble 0-F) + its databyte into a
+// short human-readable tooltip. Descriptions follow the GoatTracker manual
+// (docs/goattracker.txt, "3.2 Pattern data") — these are GoatTracker's own
+// commands, NOT Protracker's, so 5XY-FXY differ from MOD effects.
+static QString commandTooltip(unsigned char cmd, unsigned char param) {
+    const int X = (param >> 4) & 0xF;
+    const int Y = param & 0xF;
+    const QString p2 = QString("$%1").arg(param, 2, 16, QLatin1Char('0')).toUpper();
+    const QString head = QString("Command %1%2")
+                             .arg(cmd, 1, 16, QLatin1Char('0'))
+                             .arg(param, 2, 16, QLatin1Char('0')).toUpper();
+    QString body;
+    switch (cmd & 0xF) {
+    case 0x1: body = "Portamento up — XY indexes a 16-bit speed in the speedtable."; break;
+    case 0x2: body = "Portamento down — XY indexes a 16-bit speed in the speedtable."; break;
+    case 0x3: body = (param == 0)
+                  ? "Toneportamento — $00 ties the note (jumps straight to the target)."
+                  : "Toneportamento — slide to the target note; XY indexes the speedtable."; break;
+    case 0x4: body = "Vibrato — XY indexes the speedtable (left = speed, right = depth)."; break;
+    case 0x5: body = QString("Set attack/decay register = %1 (attack %2, decay %3).")
+                         .arg(p2).arg(X, 0, 16).arg(Y, 0, 16).toUpper(); break;
+    case 0x6: body = QString("Set sustain/release register = %1 (sustain %2, release %3).")
+                         .arg(p2).arg(X, 0, 16).arg(Y, 0, 16).toUpper(); break;
+    case 0x7: body = QString("Set waveform register = %1.").arg(p2); break;
+    case 0x8: body = (param == 0) ? "Wavetable pointer — $00 stops wavetable execution."
+                                  : "Set wavetable pointer to " + p2 + "."; break;
+    case 0x9: body = (param == 0) ? "Pulsetable pointer — $00 stops pulsetable execution."
+                                  : "Set pulsetable pointer to " + p2 + "."; break;
+    case 0xA: body = (param == 0) ? "Filtertable pointer — $00 stops filtertable execution."
+                                  : "Set filtertable pointer to " + p2 + "."; break;
+    case 0xB: body = (param == 0)
+                  ? "Filter control — $00 turns the filter off (also stops the filtertable)."
+                  : QString("Set filter control — resonance %1, channel bitmask %2.")
+                        .arg(X, 0, 16).arg(Y, 0, 16).toUpper(); break;
+    case 0xC: body = QString("Set filter cutoff = %1.").arg(p2); break;
+    case 0xD: body = (X == 0)
+                  ? QString("Set master volume = %1.").arg(Y, 0, 16).toUpper()
+                  : QString("Write %1 to the timing-mark location (player address + $3F).").arg(p2); break;
+    case 0xE: body = "Funktempo — XY indexes the speedtable; tempo alternates between its two values."; break;
+    case 0xF:
+        if (param >= 0x03 && param <= 0x7F)      body = QString("Set tempo = %1 (all channels).").arg(param);
+        else if (param >= 0x83)                  body = QString("Set tempo = %1 (current channel only).").arg(param - 0x80);
+        else                                     body = "Set tempo — $00/$01 recall the funktempo (E command) values.";
+        break;
+    default:  body = "Do nothing."; break;
+    }
+    return head + "\n" + body;
+}
+
 bool PatternView::event(QEvent *e) {
     if (e->type() == QEvent::ToolTip) {
         auto *he = static_cast<QHelpEvent*>(e);
@@ -259,6 +308,31 @@ bool PatternView::event(QEvent *e) {
                     .arg(epchn + 1),
                 this);
             return true;
+        }
+        // Command-column hover: decode the GoatTracker command + databyte.
+        if (cmdHoverOn_ && pos.y() >= gridTopOffset() && pos.x() >= rowNumW_) {
+            int c = channelAtX(pos.x());
+            if (c >= 0 && c < MAX_CHN) {
+                int xInChan = pos.x() - (rowNumW_ + c * chnW_);
+                int col = xInChan / colWidth;
+                // cmd nibble + 2-digit databyte live in cols 7..10 (see the
+                // click-mapping in mousePressEvent).
+                if (col >= 7 && col <= 10) {
+                    int row = verticalScrollBar()->value()
+                              + (pos.y() - gridTopOffset()) / rowHeight;
+                    int patnum = epnum[c];
+                    if (patnum >= 0 && patnum < MAX_PATT
+                        && row >= 0 && row < pattlen[patnum]) {
+                        const unsigned char *cell = &pattern[patnum][row * 4];
+                        unsigned char cmd = cell[2], param = cell[3];
+                        if (cmd != 0) {       // skip empty / "do nothing" cells
+                            QToolTip::showText(he->globalPos(),
+                                               commandTooltip(cmd, param), this);
+                            return true;
+                        }
+                    }
+                }
+            }
         }
         QToolTip::hideText();
     }

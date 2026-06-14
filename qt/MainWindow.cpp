@@ -758,6 +758,22 @@ void MainWindow::buildUi() {
         QSettings s; s.setValue("editor/sidIndicators", on);
     });
 
+    auto *cmdHoverA = viewMenu->addAction("Decode &commands on hover");
+    cmdHoverA->setCheckable(true);
+    cmdHoverA->setToolTip(
+        "Hover a pattern command cell (the command nibble + databyte) to see "
+        "a tooltip explaining the GoatTracker command and its parameters.");
+    {
+        QSettings s;
+        bool on = s.value("editor/cmdHover", true).toBool();
+        cmdHoverA->setChecked(on);
+        pattern_->setCmdHoverEnabled(on);
+    }
+    connect(cmdHoverA, &QAction::toggled, this, [this](bool on) {
+        pattern_->setCmdHoverEnabled(on);
+        QSettings s; s.setValue("editor/cmdHover", on);
+    });
+
     // ---- Insert row mode submenu --------------------------------------
     // Pattern editor Insert / Ctrl+Backspace can either grow / shrink the
     // pattern length by one, or push rows off / pull rows in while keeping
