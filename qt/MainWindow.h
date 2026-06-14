@@ -159,6 +159,7 @@ private:
     QWidget     *patternBar_ = nullptr;       // toolbar above the stack —
     QLabel      *patternBarOct_ = nullptr;    // only visible on Pattern
     QLabel      *patternBarLen_ = nullptr;    // editor.
+    QLabel      *patternBarTempo_ = nullptr;  // read-only ticks/row indicator
     QTimer *timer_ = nullptr;
     CoreEvents *coreEvents_ = nullptr;
 

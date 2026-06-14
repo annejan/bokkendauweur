@@ -24,6 +24,11 @@ public slots:
     // Per-voice SID waveform / flag indicator block in the vu+scope strip.
     void setSidIndicatorsEnabled(bool on) { sidIndOn_ = on; viewport()->update(); }
     bool sidIndicatorsEnabled() const     { return sidIndOn_; }
+    // Hover-decode of the command column: when on, hovering a pattern
+    // command cell shows a tooltip explaining the GoatTracker command +
+    // its databyte. Purely a display aid; no effect on painting.
+    void setCmdHoverEnabled(bool on) { cmdHoverOn_ = on; }
+    bool cmdHoverEnabled() const     { return cmdHoverOn_; }
     // Beat tinting: rowsPerBeat lights the lighter "beat" band every N
     // rows, and rowsPerBeat * beatsPerBar lights the darker "downbeat"
     // band every M rows. Default 4 / 4 -> beat every 4 rows, downbeat
@@ -127,6 +132,7 @@ private:
     bool instrColorsOn_ = false;
     bool noteColorsOn_ = false;
     bool sidIndOn_ = true;
+    bool cmdHoverOn_ = true;   // decode command cells on hover (toggleable)
     int  beatRows_ = 4;
     int  barBeats_ = 4;
     int lastEppos_ = -1;

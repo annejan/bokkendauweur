@@ -29,6 +29,7 @@ extern int stereo_mode;
 extern unsigned catweasel, interpolate, customclockrate;
 extern unsigned keypreset;
 extern int followplay;
+extern int recordmode;
 extern char songfilename[];
 extern int songinit;
 void loadsong(void);
@@ -151,6 +152,11 @@ int main(int argc, char **argv) {
     // it and left pattlen[] zeroed.
     clearsong(1, 1, 1, 1, 1);
     countpatternlengths();
+
+    // Start in audition (record OFF) so the user can't accidentally overwrite
+    // pattern data before deliberately enabling record. The C core defaults
+    // recordmode to 1; flip it off here for the Qt editor.
+    recordmode = 0;
 
     MainWindow w;
     w.show();

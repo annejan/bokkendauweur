@@ -282,6 +282,28 @@ void MainWindow::buildUi() {
     connect(lenDown, &QToolButton::clicked, this, &MainWindow::shrinkPattern);
     connect(lenUp,   &QToolButton::clicked, this, &MainWindow::growPattern);
 
+    auto *sep2 = new QFrame(patternBar_);
+    sep2->setFrameShape(QFrame::VLine);
+    sep2->setFrameShadow(QFrame::Sunken);
+    pbLay->addSpacing(8);
+    pbLay->addWidget(sep2);
+    pbLay->addSpacing(8);
+
+    // Read-only tempo indicator: current ticks-per-row of the active channel
+    // (set by the F command). No +/- — tempo is driven by pattern F commands,
+    // not edited here.
+    pbLay->addWidget(new QLabel("Tempo", patternBar_));
+    auto *tempoShow = new QLabel("6", patternBar_);
+    tempoShow->setMinimumWidth(32);
+    tempoShow->setAlignment(Qt::AlignCenter);
+    QFont tbf = tempoShow->font(); tbf.setBold(true);
+    tempoShow->setFont(tbf);
+    tempoShow->setToolTip("Active channel's tempo in ticks per row (set by the "
+                          "F command). 'funk' = funktempo (alternating values).");
+    tempoShow->setAccessibleName("Tempo");
+    pbLay->addWidget(tempoShow);
+    patternBarTempo_ = tempoShow;
+
     pbLay->addStretch(1);
     // ---- Editor area: detachable dock tabs -------------------------------
     // The five editors live inside a nested QMainWindow as tabified
@@ -758,6 +780,22 @@ void MainWindow::buildUi() {
         QSettings s; s.setValue("editor/sidIndicators", on);
     });
 
+    auto *cmdHoverA = viewMenu->addAction("Decode &commands on hover");
+    cmdHoverA->setCheckable(true);
+    cmdHoverA->setToolTip(
+        "Hover a pattern command cell (the command nibble + databyte) to see "
+        "a tooltip explaining the GoatTracker command and its parameters.");
+    {
+        QSettings s;
+        bool on = s.value("editor/cmdHover", true).toBool();
+        cmdHoverA->setChecked(on);
+        pattern_->setCmdHoverEnabled(on);
+    }
+    connect(cmdHoverA, &QAction::toggled, this, [this](bool on) {
+        pattern_->setCmdHoverEnabled(on);
+        QSettings s; s.setValue("editor/cmdHover", on);
+    });
+
     // ---- Insert row mode submenu --------------------------------------
     // Pattern editor Insert / Ctrl+Backspace can either grow / shrink the
     // pattern length by one, or push rows off / pull rows in while keeping
@@ -1200,6 +1238,15 @@ void MainWindow::loadSongFile(const QString &path) {
     eschn = 0;
     for (int c = 0; c < MAX_CHN; c++) espos[c] = 0;
     epoctave = 4;          // default play octave — middle of the C64 range
+    // Clear the Pos-resume bookmark too. Without this, loading a new song
+    // while a previous one was paused (or just played) mid-song left
+    // pausedSongptr_/pausedPattRow_ pointing into the OLD song, so the next
+    // Play-from-position resumed the NEW song from that stale offset instead
+    // of the top. Homing it here makes a fresh Pos start from the (now home)
+    // editor cursor.
+    pausedAtPos_ = false;
+    pausedPattRow_ = 0;
+    for (int c = 0; c < MAX_CHN; c++) pausedSongptr_[c] = 0;
     // PatternView::refresh() will yank the vertical scrollbar back to 0
     // on the next refreshAll() call because (eppos < rowOffset) → setValue(eppos).
     // Wipe chn[] so stale pattptr / songptr / pattnum / gate / instr from
@@ -1870,6 +1917,13 @@ void MainWindow::refreshAll() {
         int p = epnum[epchn];
         patternBarLen_->setText(QString("$%1")
             .arg(pattlen[p], 2, 16, QLatin1Char('0')).toUpper());
+    }
+    if (patternBarTempo_ && epchn >= 0 && epchn < MAX_CHN) {
+        // chn[].tempo is the reload value (ticks-1); >=2 is a normal tempo,
+        // <2 means funktempo is active on that channel.
+        int t = chn[epchn].tempo;
+        patternBarTempo_->setText(t >= 2 ? QString::number(t + 1)
+                                         : QStringLiteral("funk"));
     }
 
     // Transport glow — light up whichever Play / Stop button reflects the

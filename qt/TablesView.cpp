@@ -15,6 +15,7 @@
 #include <QLabel>
 #include <QGroupBox>
 #include <QStyledItemDelegate>
+#include <QStyle>
 #include <QPainter>
 #include <QKeyEvent>
 #include <QMenu>
@@ -255,12 +256,29 @@ public:
         if (row % 4 == 0 && bg == Theme::C::bgBase) bg = Theme::C::beat;
 
         p->fillRect(opt.rect, bg);
-        // Cursor highlight (matches the global etnum / etpos)
-        if (t_ == etnum && row == etpos) {
-            p->fillRect(opt.rect, Theme::C::editRow);
+        // Cursor highlight (matches the global etnum / etpos / etcolumn):
+        //   - a DIM wash across the whole cursor row, and
+        //   - a BRIGHT fill + border on the exact cell under the cursor
+        //     (L = model col 1 / etcolumn 0, R = model col 2 / etcolumn 1).
+        // Both are repainted on every cursor move (TablesView forces a
+        // viewport update in onCellSelectionChanged), so nothing lingers.
+        const bool cursorRow  = (t_ == etnum && row == etpos);
+        const bool cursorCell = cursorRow &&
+            ((i.column() == 1 && etcolumn == 0) ||
+             (i.column() == 2 && etcolumn == 1));
+        if (cursorRow) {
+            QColor dim = Theme::C::editRow; dim.setAlpha(80);
+            p->fillRect(opt.rect, dim);
         }
-        QStyledItemDelegate::paint(p, opt, i);
-        if (t_ == etnum && row == etpos) {
+        if (cursorCell) {
+            p->fillRect(opt.rect, Theme::C::editRow);  // bright, opaque
+        }
+        // Strip the selection state so the base delegate doesn't repaint its
+        // own selection wash over our cursor fills — we own the highlight.
+        QStyleOptionViewItem o(opt);
+        o.state &= ~QStyle::State_Selected;
+        QStyledItemDelegate::paint(p, o, i);
+        if (cursorCell) {
             p->setPen(QPen(Theme::C::highlight, 1));
             p->drawRect(opt.rect.adjusted(0, 0, -1, -1));
         }
@@ -500,6 +518,10 @@ void TablesView::onCellSelectionChanged() {
         etpos = idx.row();
         etcolumn = idx.column() >= 1 ? idx.column() - 1 : 0;
     }
+    // The cursor row/cell highlight is delegate-painted from the globals
+    // above; Qt only repaints the moved cell, so repaint the whole viewport
+    // to clear the previous row's wash.
+    v->viewport()->update();
     updateDecoder();
     updateUsedBy();
     updateLegend();
