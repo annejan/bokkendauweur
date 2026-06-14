@@ -1238,6 +1238,15 @@ void MainWindow::loadSongFile(const QString &path) {
     eschn = 0;
     for (int c = 0; c < MAX_CHN; c++) espos[c] = 0;
     epoctave = 4;          // default play octave — middle of the C64 range
+    // Clear the Pos-resume bookmark too. Without this, loading a new song
+    // while a previous one was paused (or just played) mid-song left
+    // pausedSongptr_/pausedPattRow_ pointing into the OLD song, so the next
+    // Play-from-position resumed the NEW song from that stale offset instead
+    // of the top. Homing it here makes a fresh Pos start from the (now home)
+    // editor cursor.
+    pausedAtPos_ = false;
+    pausedPattRow_ = 0;
+    for (int c = 0; c < MAX_CHN; c++) pausedSongptr_[c] = 0;
     // PatternView::refresh() will yank the vertical scrollbar back to 0
     // on the next refreshAll() call because (eppos < rowOffset) → setValue(eppos).
     // Wipe chn[] so stale pattptr / songptr / pattnum / gate / instr from
