@@ -282,6 +282,28 @@ void MainWindow::buildUi() {
     connect(lenDown, &QToolButton::clicked, this, &MainWindow::shrinkPattern);
     connect(lenUp,   &QToolButton::clicked, this, &MainWindow::growPattern);
 
+    auto *sep2 = new QFrame(patternBar_);
+    sep2->setFrameShape(QFrame::VLine);
+    sep2->setFrameShadow(QFrame::Sunken);
+    pbLay->addSpacing(8);
+    pbLay->addWidget(sep2);
+    pbLay->addSpacing(8);
+
+    // Read-only tempo indicator: current ticks-per-row of the active channel
+    // (set by the F command). No +/- — tempo is driven by pattern F commands,
+    // not edited here.
+    pbLay->addWidget(new QLabel("Tempo", patternBar_));
+    auto *tempoShow = new QLabel("6", patternBar_);
+    tempoShow->setMinimumWidth(32);
+    tempoShow->setAlignment(Qt::AlignCenter);
+    QFont tbf = tempoShow->font(); tbf.setBold(true);
+    tempoShow->setFont(tbf);
+    tempoShow->setToolTip("Active channel's tempo in ticks per row (set by the "
+                          "F command). 'funk' = funktempo (alternating values).");
+    tempoShow->setAccessibleName("Tempo");
+    pbLay->addWidget(tempoShow);
+    patternBarTempo_ = tempoShow;
+
     pbLay->addStretch(1);
     // ---- Editor area: detachable dock tabs -------------------------------
     // The five editors live inside a nested QMainWindow as tabified
@@ -1886,6 +1908,13 @@ void MainWindow::refreshAll() {
         int p = epnum[epchn];
         patternBarLen_->setText(QString("$%1")
             .arg(pattlen[p], 2, 16, QLatin1Char('0')).toUpper());
+    }
+    if (patternBarTempo_ && epchn >= 0 && epchn < MAX_CHN) {
+        // chn[].tempo is the reload value (ticks-1); >=2 is a normal tempo,
+        // <2 means funktempo is active on that channel.
+        int t = chn[epchn].tempo;
+        patternBarTempo_->setText(t >= 2 ? QString::number(t + 1)
+                                         : QStringLiteral("funk"));
     }
 
     // Transport glow — light up whichever Play / Stop button reflects the
