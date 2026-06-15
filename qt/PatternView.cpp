@@ -1,6 +1,7 @@
 #include "PatternView.h"
 
 #include <QPainter>
+#include <QLinearGradient>
 #include <QPainterPath>
 #include <QPaintEvent>
 #include <QScrollBar>
@@ -106,11 +107,12 @@ PatternView::PatternView(QWidget *parent) : QAbstractScrollArea(parent) {
     colWidth = fm.horizontalAdvance('0');
     rowNumW_ = 6 * colWidth;
     chnW_ = 16 * colWidth;   // widened so header (Ch P L M) fits without overlap
-    // 22 px so the SID waveform indicator glyphs (T S P N y r F) painted
-    // at the right edge of the strip have enough vertical room — at the
-    // old 14 px the text was getting clipped by the toolbar above.
-    vuStripH_ = 22;
-    scopeStripH_ = 32;
+    // The per-channel VU meter moved to the vertical gutters between tracks,
+    // so the old horizontal VU strip is gone (vuStripH_ = 0). The scope strip
+    // grows a little to keep room for the SID waveform indicator glyphs
+    // (T S P N y r F) that overlay its right edge.
+    vuStripH_ = 0;
+    scopeStripH_ = 40;
     headerStripH_ = rowHeight + 4;
     setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     Theme::applyDarkPalette(viewport());
@@ -206,6 +208,13 @@ void PatternView::tickScope() {
     unsigned char levels[MAX_CHN] = {0};
     sid_getlevels(levels);
     for (int c = 0; c < MAX_CHN; c++) scope_[c][scopeHead_] = levels[c];
+    // VU ballistics: jump up quickly, fall slowly, so the meter holds and
+    // glides down instead of flickering on every transient dip.
+    for (int c = 0; c < MAX_CHN; c++) {
+        float target = levels[c];
+        float rate = (target > vuSmooth_[c]) ? 0.55f : 0.12f;  // attack / decay
+        vuSmooth_[c] += (target - vuSmooth_[c]) * rate;
+    }
     // Capture filter cutoff alongside the envelope so paintEvent can
     // draw a second yellow trace on top of the scope curve when the
     // voice is routed through the filter. Cutoff is the 11-bit value
@@ -313,7 +322,7 @@ bool PatternView::event(QEvent *e) {
         if (cmdHoverOn_ && pos.y() >= gridTopOffset() && pos.x() >= rowNumW_) {
             int c = channelAtX(pos.x());
             if (c >= 0 && c < MAX_CHN) {
-                int xInChan = pos.x() - (rowNumW_ + c * chnW_);
+                int xInChan = pos.x() - (channelX(c));
                 int col = xInChan / colWidth;
                 // cmd nibble + 2-digit databyte live in cols 7..10 (see the
                 // click-mapping in mousePressEvent).
@@ -542,7 +551,7 @@ void PatternView::notifyAccessibleStructure() {
 int PatternView::channelAtX(int x) const {
     int rx = x - rowNumW_;
     if (rx < 0) return -1;
-    int c = rx / chnW_;
+    int c = rx / channelPitch();
     if (c < 0 || c >= shownChannels()) return -1;
     return c;
 }
@@ -565,7 +574,7 @@ PatternView::SelRect PatternView::normalisedSelection() const {
 QRect PatternView::cellRect(int chan, int row) const {
     int rowOffset = verticalScrollBar()->value();
     int y = gridTopOffset() + (row - rowOffset) * rowHeight;
-    int x = rowNumW_ + chan * chnW_;
+    int x = channelX(chan);
     return QRect(x, y, chnW_, rowHeight);
 }
 
@@ -865,7 +874,7 @@ void PatternView::mousePressEvent(QMouseEvent *e) {
     if (y >= headerY && y < headerY + headerStripH_) {
         int c = channelAtX(e->pos().x());
         if (c >= 0) {
-            int xInChan = e->pos().x() - (rowNumW_ + c * chnW_);
+            int xInChan = e->pos().x() - (channelX(c));
             int muteX = chnW_ - 32;
             if (xInChan >= muteX) {
                 mutechannel(c);
@@ -960,7 +969,7 @@ void PatternView::mousePressEvent(QMouseEvent *e) {
             epchn = c;
             // Map x-within-channel to epcolumn. Layout mirrors paintEvent's
             // colRect math: note=3w@0, instr=2w@4w, cmd=1w@7w, param=2w@8w.
-            int xInChan = e->pos().x() - (rowNumW_ + c * chnW_);
+            int xInChan = e->pos().x() - (channelX(c));
             int col = xInChan / colWidth;
             // Paint code offsets text by +colWidth (tx = x + colWidth), so
             // the visible digit columns are shifted one col right of the raw
@@ -1084,6 +1093,51 @@ void PatternView::contextMenuEvent(QContextMenuEvent *e) {
     menu.exec(e->globalPos());
 }
 
+// VU meter colour schemes — selectable from View ▸ VU meter colours. Each is
+// a set of gradient stops applied bottom (quiet) -> top (loud). Index order
+// must match the menu radio in MainWindow.
+namespace {
+const char *const kVuSchemeNames[] =
+    { "Classic", "Rainbow", "Spectrum", "Heat", "Mono" };
+constexpr int kVuSchemeCount = 5;
+
+void applyVuStops(QLinearGradient &g, int scheme) {
+    switch (scheme) {
+    case 0: // Classic — green / amber / red
+        g.setColorAt(0.00, QColor(0x2F, 0xC0, 0x4A));
+        g.setColorAt(0.60, QColor(0x46, 0xD9, 0x5A));
+        g.setColorAt(0.85, QColor(0xE6, 0xB8, 0x32));
+        g.setColorAt(1.00, QColor(0xE5, 0x48, 0x4D));
+        break;
+    default:
+    case 1: // Rainbow — green -> yellow -> orange -> red (the screenshot look)
+        g.setColorAt(0.00, QColor(0x33, 0xD0, 0x44));
+        g.setColorAt(0.50, QColor(0xE9, 0xE2, 0x2E));
+        g.setColorAt(0.80, QColor(0xF2, 0x8C, 0x28));
+        g.setColorAt(1.00, QColor(0xE5, 0x3A, 0x3A));
+        break;
+    case 2: // Spectrum — blue -> cyan -> green -> yellow -> red
+        g.setColorAt(0.00, QColor(0x2E, 0x6B, 0xE0));
+        g.setColorAt(0.30, QColor(0x39, 0xC5, 0xCF));
+        g.setColorAt(0.55, QColor(0x46, 0xD9, 0x5A));
+        g.setColorAt(0.80, QColor(0xE9, 0xE2, 0x2E));
+        g.setColorAt(1.00, QColor(0xE5, 0x3A, 0x3A));
+        break;
+    case 3: // Heat — near-black -> red -> orange -> yellow -> white
+        g.setColorAt(0.00, QColor(0x20, 0x00, 0x00));
+        g.setColorAt(0.40, QColor(0xC0, 0x20, 0x10));
+        g.setColorAt(0.70, QColor(0xF2, 0x8C, 0x28));
+        g.setColorAt(0.90, QColor(0xF2, 0xE2, 0x4A));
+        g.setColorAt(1.00, QColor(0xFF, 0xFF, 0xFF));
+        break;
+    case 4: // Mono — single theme highlight colour
+        g.setColorAt(0.00, Theme::C::vuGreen.darker(140));
+        g.setColorAt(1.00, Theme::C::vuGreen);
+        break;
+    }
+}
+} // namespace
+
 void PatternView::paintEvent(QPaintEvent *) {
     QPainter p(viewport());
     p.setFont(font());
@@ -1091,53 +1145,9 @@ void PatternView::paintEvent(QPaintEvent *) {
     const int rowOffset = verticalScrollBar()->value();
     const int W = viewport()->width();
 
-    // ---- VU bars strip --------------------------------------------------
-    const int vuPad = 4;
-    const int vuH = vuStripH_ - vuPad * 2;
-    unsigned char levels[MAX_CHN] = {0};
-    sid_getlevels(levels);
-    for (int c = 0; c < shownChannels(); c++) {
-        int x = rowNumW_ + c * chnW_ + 2;
-        int w = chnW_ - 6;
-        QRect frame(x, vuPad, w, vuH);
-        p.fillRect(frame, Theme::C::vuBg);
-        p.setPen(Theme::C::sep);
-        p.drawRect(frame);
-        if (chn[c].mute) {
-            // Bright red so the muted channel actually pops out of the VU
-            // bar; the previous dark muted red blended into the strip
-            // background. Bold for extra weight in case the rest of the
-            // VU strip is busy.
-            QFont mf = p.font();
-            mf.setBold(true);
-            p.setFont(mf);
-            p.setPen(QColor(255, 80, 80));
-            p.drawText(QPoint(x + 4, vuPad + vuH - 2), "MUTE");
-            p.setFont(font());
-            continue;
-        }
-        // Waveform / flag indicators sit in a fixed-width block at the
-        // right edge, spanning the FULL height of vu strip + scope strip
-        // (rendered after both loops below). VU bar shrinks by indW so
-        // the meter fill never paints over the indicator block. When
-        // the View ▸ SID indicators toggle is off, indW=0 and the
-        // meter reclaims the full cell width.
-        const int indColW = 16;
-        const int indW = sidIndOn_ ? indColW * 2 : 0;
-        const int meterW = qMax(8, w - indW - 4);
-        int filled = (int)((double)levels[c] / 255.0 * (meterW - 2));
-        if (filled > 0) {
-            int seg1 = (int)((meterW - 2) * 0.6);
-            int seg2 = (int)((meterW - 2) * 0.9);
-            int rem = filled;
-            int xx = x + 1;
-            int g = qMin(rem, seg1);
-            if (g > 0) { p.fillRect(QRect(xx, vuPad + 1, g, vuH - 2), Theme::C::vuGreen); rem -= g; xx += g; }
-            int y = qMin(rem, seg2 - seg1);
-            if (y > 0) { p.fillRect(QRect(xx, vuPad + 1, y, vuH - 2), Theme::C::vuAmber); rem -= y; xx += y; }
-            if (rem > 0) p.fillRect(QRect(xx, vuPad + 1, rem, vuH - 2), Theme::C::vuRed);
-        }
-    }
+    // The per-channel VU meter is now a vertical bar in the gutter between
+    // tracks (drawn after the grid + row highlights so nothing paints over
+    // it — see drawVuMeters() at the end of paintEvent).
 
     // ---- SID waveform / flag indicator block ----------------------------
     // Skipped when the user toggles them off via View ▸ SID indicators.
@@ -1163,7 +1173,7 @@ void PatternView::paintEvent(QPaintEvent *) {
         gf.setBold(true);
         p.setFont(gf);
         for (int c = 0; c < shownChannels(); c++) {
-            int x = rowNumW_ + c * chnW_ + 2;
+            int x = channelX(c) + 2;
             int w = chnW_ - 6;
             int x0 = x + w - indW;
 
@@ -1216,7 +1226,7 @@ void PatternView::paintEvent(QPaintEvent *) {
     // ---- Mini scope strip -----------------------------------------------
     int scopeY = vuStripH_;
     for (int c = 0; c < shownChannels(); c++) {
-        int x = rowNumW_ + c * chnW_ + 2;
+        int x = channelX(c) + 2;
         // Reserve the right edge for the SID waveform indicator block
         // (drawn above) so the scope curve doesn't stretch under it.
         // When the user hides those indicators, the scope reclaims the
@@ -1271,13 +1281,13 @@ void PatternView::paintEvent(QPaintEvent *) {
     const int muteW = 24;
     const int muteGap = 8;
     for (int c = 0; c < shownChannels(); c++) {
-        int x = rowNumW_ + c * chnW_ + 4;
+        int x = channelX(c) + 4;
         bool active = (c == epchn);
         QRect headRect(x - 4, headerY + 2, chnW_ - 4, headerStripH_ - 4);
         if (active) p.fillRect(headRect, Theme::C::bgAlt);
 
         // Reserve right side for the mute toggle so the labels never collide.
-        int muteX = rowNumW_ + (c + 1) * chnW_ - muteW - muteGap;
+        int muteX = channelX(c) + chnW_ - muteW - muteGap;
 
         p.setPen(active ? Theme::C::highlight : Theme::C::textDim);
         QFont hf = font();
@@ -1347,10 +1357,10 @@ void PatternView::paintEvent(QPaintEvent *) {
 
         const int barRows = beatRows_ * barBeats_;
         if (refRow % barRows == 0)
-            p.fillRect(QRect(0, lineRect.y(), rowNumW_ + chnW_ * MAX_CHN, rowHeight),
+            p.fillRect(QRect(0, lineRect.y(), channelX(MAX_CHN), rowHeight),
                        Theme::C::downbeat);
         else if (refRow % beatRows_ == 0)
-            p.fillRect(QRect(0, lineRect.y(), rowNumW_ + chnW_ * MAX_CHN, rowHeight),
+            p.fillRect(QRect(0, lineRect.y(), channelX(MAX_CHN), rowHeight),
                        Theme::C::beat);
 
         // Edit cursor row — centre line during follow-centre, eppos otherwise.
@@ -1366,7 +1376,7 @@ void PatternView::paintEvent(QPaintEvent *) {
         for (int c = 0; c < shownChannels(); c++) {
             int patnum = epnum[c];
             int plen = pattlen[patnum];
-            int x = rowNumW_ + c * chnW_;
+            int x = channelX(c);
             QRect cellRect(x, lineRect.y(), chnW_, rowHeight);
 
             // Per-channel virtual row. Follow-centre offsets each channel
@@ -1555,6 +1565,47 @@ void PatternView::paintEvent(QPaintEvent *) {
             if (hasFocusRect) {
                 p.setPen(QPen(QColor(255, 255, 255), 1));
                 p.drawRect(focusRect.adjusted(0, 0, -1, -1));
+            }
+        }
+    }
+
+    // ---- Vertical inter-track VU meters ---------------------------------
+    // Drawn last (over the grid + row highlights) so it never obstructs note
+    // text. A wide bar is centred in the empty space between a channel's note
+    // text and the next channel. It is anchored at the bottom of the play /
+    // edit-cursor row and grows UPWARD, capped at a fraction of the pattern
+    // area height (so it reads as a per-row meter, not a full-height bar).
+    {
+        const int gridTop = gridTopOffset();
+        const int gridH   = viewport()->height() - gridTop;
+        if (gridH > 8) {
+            // Baseline = bottom edge of the highlighted play / cursor row.
+            const int screenRow = followCenter ? centerR : (eppos - rowOffset);
+            int baselineY = gridTop + (screenRow + 1) * rowHeight;
+            baselineY = qBound(gridTop, baselineY, gridTop + gridH);
+            const int maxBarH    = qMax(8, gridH / 4);       // ~25% of pattern area
+            const int textRightW = 11 * colWidth + 4;        // past the param text
+            for (int c = 0; c < shownChannels(); c++) {
+                const int emptyL = channelX(c) + textRightW;
+                const int emptyR = channelX(c) + chnW_ + vuGutterW_;
+                const int barW   = qBound(8, (emptyR - emptyL) - 6, 22);
+                const int barX   = (emptyL + emptyR) / 2 - barW / 2;
+                if (chn[c].mute) continue;
+                int fillH = (int)((double)vuSmooth_[c] / 255.0 * maxBarH);
+                if (fillH <= 0) continue;
+                if (fillH > baselineY - gridTop) fillH = baselineY - gridTop;
+                QLinearGradient grad(0, baselineY, 0, baselineY - maxBarH); // quiet->loud
+                applyVuStops(grad, vuScheme_);
+                const QRect bar(barX, baselineY - fillH, barW, fillH);
+                p.fillRect(bar, grad);
+                // Depth illusion: a lit strip down the left edge (+brightness)
+                // and a shaded strip down the right (-brightness), so the bar
+                // reads as a rounded cylinder.
+                const int sw = qMax(2, barW / 5);
+                p.fillRect(QRect(bar.left(), bar.top(), sw, bar.height()),
+                           QColor(255, 255, 255, 51));   // lit left edge (~20%)
+                p.fillRect(QRect(bar.right() - sw + 1, bar.top(), sw, bar.height()),
+                           QColor(0, 0, 0, 51));          // shaded right edge (~20%)
             }
         }
     }
