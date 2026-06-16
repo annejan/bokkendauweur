@@ -24,6 +24,10 @@ public slots:
     // Per-voice SID waveform / flag indicator block in the vu+scope strip.
     void setSidIndicatorsEnabled(bool on) { sidIndOn_ = on; viewport()->update(); }
     bool sidIndicatorsEnabled() const     { return sidIndOn_; }
+    // Colour scheme for the vertical inter-track VU meters. Index into the
+    // kVuSchemes gradient table (0 = Classic, 1 = Rainbow, …).
+    void setVuScheme(int s) { vuScheme_ = s; viewport()->update(); }
+    int  vuScheme() const   { return vuScheme_; }
     // Hover-decode of the command column: when on, hovering a pattern
     // command cell shows a tooltip explaining the GoatTracker command +
     // its databyte. Purely a display aid; no effect on painting.
@@ -112,6 +116,13 @@ private:
     int vuStripH_ = 0;
     int scopeStripH_ = 0;
     int headerStripH_ = 0;
+    // No extra gutter between channels — the vertical VU meter is centred in
+    // the empty trailing space each channel cell already has after its note
+    // text, so it needs no added width. (Kept as a tunable in case a future
+    // layout wants real separation.)
+    int vuGutterW_ = 0;
+    int channelPitch() const { return chnW_ + vuGutterW_; }
+    int channelX(int c) const { return rowNumW_ + c * channelPitch(); }
 
     int channelAtX(int x) const;
     // Accessibility self-voicing: speak the cell under the edit cursor.
@@ -133,6 +144,11 @@ private:
     bool noteColorsOn_ = false;
     bool sidIndOn_ = true;
     bool cmdHoverOn_ = true;   // decode command cells on hover (toggleable)
+    int   vuScheme_ = 1;       // default Rainbow (see kVuSchemes)
+    // Smoothed per-channel VU level (0..255) with fast-attack / slow-decay
+    // ballistics, updated in tickScope() so the bars don't blink on transient
+    // drops. paintEvent reads this instead of the raw envelope level.
+    float vuSmooth_[MAX_CHN] = {0};
     int  beatRows_ = 4;
     int  barBeats_ = 4;
     int lastEppos_ = -1;

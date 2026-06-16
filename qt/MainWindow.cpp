@@ -796,6 +796,26 @@ void MainWindow::buildUi() {
         QSettings s; s.setValue("editor/cmdHover", on);
     });
 
+    // ---- VU meter colour scheme ---------------------------------------
+    // Drives the vertical inter-track VU bars. Order must match PatternView's
+    // kVuSchemes table.
+    auto *vuMenu = viewMenu->addMenu("VU &meter colours");
+    auto *vuGroup = new QActionGroup(this);
+    const char *vuNames[] = { "&Classic", "&Rainbow", "&Spectrum", "&Heat", "&Mono" };
+    int curScheme = QSettings().value("editor/vuScheme", 1).toInt();
+    if (curScheme < 0 || curScheme > 4) curScheme = 1;
+    pattern_->setVuScheme(curScheme);
+    for (int i = 0; i < 5; ++i) {
+        auto *a = vuMenu->addAction(vuNames[i]);
+        a->setCheckable(true);
+        a->setActionGroup(vuGroup);
+        a->setChecked(i == curScheme);
+        connect(a, &QAction::triggered, this, [this, i]() {
+            pattern_->setVuScheme(i);
+            QSettings s; s.setValue("editor/vuScheme", i);
+        });
+    }
+
     // ---- Insert row mode submenu --------------------------------------
     // Pattern editor Insert / Ctrl+Backspace can either grow / shrink the
     // pattern length by one, or push rows off / pull rows in while keeping
